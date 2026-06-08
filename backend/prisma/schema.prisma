@@ -1,0 +1,74 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+  STUDENT
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+}
+
+model User {
+  id            String          @id @default(uuid())
+  name          String
+  email         String          @unique
+  password_hash String
+  role          Role
+  class_id      String?
+  class         Class?          @relation(fields: [class_id], references: [id])
+  attendance    AttendanceLog[]
+
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+}
+
+model Class {
+  id            String          @id @default(uuid())
+  class_code    String          @unique // 6-char unique alphanumeric
+  stream        String
+  academic_year String
+  division      String
+  students      User[]
+  timetable     TimetableSlot[]
+
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+}
+
+model TimetableSlot {
+  id           String          @id @default(uuid())
+  class_id     String
+  class        Class           @relation(fields: [class_id], references: [id], onDelete: Cascade)
+  day_of_week  String          // Monday, Tuesday, Wednesday, Thursday, Friday, Saturday
+  subject_name String
+  start_time   String          // HH:MM format
+  end_time     String          // HH:MM format
+  attendance   AttendanceLog[]
+
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+}
+
+model AttendanceLog {
+  id         String           @id @default(uuid())
+  student_id String
+  student    User             @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  slot_id    String
+  slot       TimetableSlot    @relation(fields: [slot_id], references: [id], onDelete: Cascade)
+  date       DateTime         @db.Date
+  status     AttendanceStatus @default(PRESENT)
+
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  @@unique([student_id, slot_id, date])
+}
