@@ -9,6 +9,7 @@
 *   **Google OAuth 2.0 Integration:** Single Sign-On (SSO) for students. The backend strictly enforces that sign-ins are restricted to the official college domain (`@despu.edu.in`).
 *   **Secure Single-Admin Architecture:** Admin registrations are disabled from public routes. A master administrator account is seeded securely, and administrative routes are guarded with role-based JWT middleware.
 *   **Class & Schedule Management:** Admins can generate unique 6-character class codes, configure weekly schedules, pre-populate sample university timetables, and edit class details.
+*   **Student Batch Filtering (B1/B2/AI/C1...):** Students can select their specific lab batch from their Profile. Timetables, statistics, and today's lectures lists are automatically filtered so students only attend and are evaluated on lectures belonging to their batch.
 *   **Dynamic Student Rosters:** Admins can view nested lists of enrolled students for each class division and remove/disassociate students from a division when needed.
 *   **Location-Validated Check-In:** Students check into lectures using geolocation coordinate verification with a configurable development bypass toggle (`DISABLE_GEOFENCE=true`).
 *   **Interactive Student Dashboard:** Features attendance aggregate counts, subject-wise statistics, a monthly calendar view, and a built-in "Bunk Predictor" tool.
@@ -19,17 +20,23 @@
 ## 🛠️ Technology Stack
 
 *   **Frontend:** React (Vite), Tailwind CSS v3, Lucide Icons, `@react-oauth/google`, Axios.
-*   **Backend:** Node.js, Express, Prisma ORM, PostgreSQL (Docker), JWT & signed cookie sessions, `google-auth-library`, `node-cron`.
+*   **Backend:** Python 3.13, FastAPI, SQLAlchemy ORM, PostgreSQL (Docker), JWT & signed cookie sessions, `google-auth` token validation, `apscheduler` hourly reminder cron.
 
 ---
 
 ## 📂 Project Structure
 
 ```text
-├── backend/                  # Express API server
-│   ├── prisma/               # Prisma schema and seeding scripts
-│   ├── src/                  # Route handlers, middleware, cron jobs
-│   └── package.json
+├── backend/                  # Python FastAPI API server
+│   ├── app/                  # Application packages
+│   │   ├── routes/           # Auth, Admin, Student, and Attendance route routers
+│   │   ├── database.py       # SQLAlchemy engine and session dependency
+│   │   ├── models.py         # SQLAlchemy model definitions
+│   │   ├── schemas.py        # Pydantic request/response validation schemas
+│   │   ├── auth_utils.py     # JWT handlers & signed cookies parser shim
+│   │   └── seed.py           # Master administrator seeding script
+│   ├── main.py               # FastAPI server entrypoint and background cron scheduler
+│   └── requirements.txt      # Python dependencies manifest
 │
 ├── frontend/                 # React client application
 │   ├── src/                  # UI components, contexts, and pages
@@ -48,7 +55,7 @@ Create a `.env` file inside the `backend/` directory:
 ```env
 PORT=5000
 DATABASE_URL="postgresql://postgres:postgres@localhost:5433/checkin?schema=public"
-JWT_SECRET="your-secure-jwt-secret-key"
+JWT_SECRET="super-secure-jwt-secret-key-987654321"
 DISABLE_GEOFENCE=true
 GOOGLE_CLIENT_ID="646918547768-nmn9k1bai4lcmsvtq5u58p6onokulqcu.apps.googleusercontent.com"
 ```
@@ -70,24 +77,20 @@ docker compose up -d
 ```
 
 ### Step 2: Set up the Backend
-1.  Navigate into the backend directory and install dependencies:
+1.  Navigate into the backend directory and install Python dependencies:
     ```bash
     cd backend
-    npm install
+    pip install -r requirements.txt
     ```
-2.  Run the database migrations:
+2.  Initialize the database schema tables and seed the master admin account (`admin@college.edu.in` / `Admin@123`):
     ```bash
-    npx prisma migrate dev
+    python -m app.seed
     ```
-3.  Seed the master admin account (`admin@college.edu.in` / `Admin@123`):
+3.  Start the FastAPI development server:
     ```bash
-    npx prisma db seed
+    uvicorn app.main:app --port 5000 --reload
     ```
-4.  Start the Express API server:
-    ```bash
-    npm run dev
-    ```
-    *The server runs on `http://localhost:5000`.*
+    *The backend API server runs on `http://localhost:5000`.*
 
 ### Step 3: Set up the Frontend
 1.  Navigate into the frontend directory and install dependencies:
