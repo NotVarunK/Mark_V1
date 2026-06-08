@@ -167,6 +167,18 @@ export const Dashboard = () => {
   const getDays = () => ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const getCurrentDayName = () => getDays()[new Date().getDay()];
 
+  const isSlotForStudentBatch = (subjectName, studentBatch) => {
+    if (!studentBatch) return true;
+    const subjectLower = subjectName.toLowerCase();
+    const batchLower = studentBatch.toLowerCase();
+    
+    const allBatches = ["b1", "b2", "b3", "a1", "a2", "ai", "c1", "c2"];
+    const mentionedBatches = allBatches.filter(b => subjectLower.includes(b));
+    
+    if (mentionedBatches.length === 0) return true;
+    return mentionedBatches.includes(batchLower);
+  };
+
   // Helper: check if student has checked into a slot today
   const hasCheckedInToday = (slotId) => {
     if (!dashboardData || !dashboardData.subjects) return false;
@@ -311,7 +323,10 @@ export const Dashboard = () => {
 
   if (dashboardData && user?.class?.timetable) {
     const today = new Date();
-    user.class.timetable.forEach(slot => {
+    const studentSlots = user.class.timetable.filter(slot => 
+      isSlotForStudentBatch(slot.subject_name, user.batch)
+    );
+    studentSlots.forEach(slot => {
       const conducted = countDaysBetween(TERM_START_DATE, today, slot.day_of_week);
       const attended = dashboardData.logs?.filter(log => log.slot_id === slot.id).length || 0;
 
@@ -333,7 +348,9 @@ export const Dashboard = () => {
 
   // Filter today's timetable slots
   const todayName = getCurrentDayName();
-  const todaySlots = user?.class?.timetable?.filter(slot => slot.day_of_week === todayName) || [];
+  const todaySlots = user?.class?.timetable?.filter(slot => 
+    slot.day_of_week === todayName && isSlotForStudentBatch(slot.subject_name, user.batch)
+  ) || [];
 
   return (
     <div className={`min-h-screen text-white flex flex-col md:flex-row transition-colors duration-300 ${
@@ -816,7 +833,9 @@ export const Dashboard = () => {
 
                     {(() => {
                       const selectedDayName = getDays()[selectedDate.getDay()];
-                      const daySlots = user?.class?.timetable?.filter(s => s.day_of_week === selectedDayName) || [];
+                      const daySlots = user?.class?.timetable?.filter(s => 
+                        s.day_of_week === selectedDayName && isSlotForStudentBatch(s.subject_name, user.batch)
+                      ) || [];
 
                       if (daySlots.length === 0) {
                         return (
