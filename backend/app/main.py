@@ -19,7 +19,7 @@ app = FastAPI(title="Mark_V1 API")
 
 # Configure CORS to allow sharing credentials for session cookies
 frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
-origins = [origin.strip() for origin in frontend_url.split(",") if origin.strip()]
+origins = [origin.strip().rstrip("/") for origin in frontend_url.split(",") if origin.strip()]
 
 app.add_middleware(
     CORSMiddleware,
