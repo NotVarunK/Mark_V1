@@ -18,9 +18,12 @@ from app.seed import seed_db
 app = FastAPI(title="Mark_V1 API")
 
 # Configure CORS to allow sharing credentials for session cookies
+frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
+origins = [origin.strip() for origin in frontend_url.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],

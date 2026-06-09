@@ -130,14 +130,18 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
         
     jwt_token = create_access_token({"userId": user.id, "role": user.role.value})
     
-    # Set signed cookie equivalent (we write a normal secure cookie)
+    # Set cookie (use samesite=none and secure=True in prod for Vercel/Render cross-origin session support)
+    is_prod = os.getenv("NODE_ENV") == "production"
+    samesite_val = "none" if is_prod else "lax"
+    secure_val = True if is_prod else False
+    
     response.set_cookie(
         key="token",
         value=jwt_token,
         httponly=True,
         max_age=24 * 60 * 60, # 24 hours
-        samesite="strict",
-        secure=os.getenv("NODE_ENV") == "production"
+        samesite=samesite_val,
+        secure=secure_val
     )
     
     return {
@@ -189,13 +193,17 @@ def google_auth(payload: OAuthRequest, response: Response, db: Session = Depends
             
         jwt_token = create_access_token({"userId": user.id, "role": user.role.value})
         
+        is_prod = os.getenv("NODE_ENV") == "production"
+        samesite_val = "none" if is_prod else "lax"
+        secure_val = True if is_prod else False
+        
         response.set_cookie(
             key="token",
             value=jwt_token,
             httponly=True,
             max_age=24 * 60 * 60,
-            samesite="strict",
-            secure=os.getenv("NODE_ENV") == "production"
+            samesite=samesite_val,
+            secure=secure_val
         )
         
         return {
@@ -212,7 +220,10 @@ def google_auth(payload: OAuthRequest, response: Response, db: Session = Depends
 
 @router.post("/logout")
 def logout(response: Response):
-    response.delete_cookie(key="token", samesite="strict", httponly=True)
+    is_prod = os.getenv("NODE_ENV") == "production"
+    samesite_val = "none" if is_prod else "lax"
+    secure_val = True if is_prod else False
+    response.delete_cookie(key="token", samesite=samesite_val, secure=secure_val, httponly=True)
     return {"message": "Logged out successfully."}
 
 @router.get("/me")
