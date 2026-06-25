@@ -459,7 +459,7 @@ export const Dashboard = () => {
   ) || [];
 
   return (
-    <div className={`min-h-screen text-white flex flex-col md:flex-row transition-colors duration-300 ${
+    <div className={`min-h-screen w-full text-white flex flex-col md:flex-row transition-colors duration-300 ${
       darkMode ? 'bg-black' : 'bg-brand-teal'
     }`}>
       {/* Navigation Layout */}
@@ -469,7 +469,7 @@ export const Dashboard = () => {
       <main className="flex-1 p-6 md:pl-72 pb-24 md:pb-6 max-w-7xl mx-auto w-full transition-all">
         
         {/* Top Greeting Bar */}
-        <header className="flex items-center justify-between border-b border-white/5 pb-4 mb-6">
+        <header className="flex items-center justify-between border-b border-white/5 pb-4 mb-6 pt-4 md:pt-0">
           <div>
             <h1 className="text-2xl font-extrabold tracking-tight">Hello, {user?.name?.split(' ')[0]}</h1>
             <p className="text-xs text-brand-emerald font-bold mt-0.5 tracking-wider uppercase">

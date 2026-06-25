@@ -68,7 +68,7 @@ export const Login = () => {
   };
 
   return (
-    <div className={`min-h-screen flex flex-col justify-center items-center p-4 relative transition-colors duration-300 ${
+    <div className={`min-h-screen w-full flex flex-col justify-center items-center p-4 pt-8 pb-8 relative transition-colors duration-300 ${
       darkMode ? 'bg-black text-white' : 'bg-brand-teal text-white'
     }`}>
       {/* Theme Toggle Button */}

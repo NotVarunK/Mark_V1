@@ -586,7 +586,7 @@ export const AdminDashboard = () => {
   const daysList = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
   return (
-    <div className={`min-h-screen p-6 pb-20 transition-colors duration-300 ${
+    <div className={`min-h-screen w-full flex flex-col p-4 pt-8 md:p-6 pb-20 transition-colors duration-300 ${
       darkMode ? 'bg-black text-white' : 'bg-brand-teal text-white'
     }`}>
       {/* Top Banner */}
@@ -624,7 +624,7 @@ export const AdminDashboard = () => {
       </header>
 
       {/* Navigation Tabs */}
-      <div className="flex border-b border-white/10 mb-8 max-w-7xl mx-auto gap-6 px-4 md:px-0">
+      <div className="flex border-b border-white/10 mb-8 max-w-7xl mx-auto gap-6 px-4 md:px-0 overflow-x-auto no-scrollbar whitespace-nowrap">
         <button
           onClick={() => setActiveAdminTab('setup')}
           className={`flex items-center gap-2 pb-3 text-sm font-extrabold transition-all border-b-2 ${
