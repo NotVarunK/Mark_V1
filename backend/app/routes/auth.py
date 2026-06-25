@@ -130,18 +130,15 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
         
     jwt_token = create_access_token({"userId": user.id, "role": user.role.value})
     
-    # Set cookie (use samesite=none and secure=True in prod for Vercel/Render cross-origin session support)
-    is_prod = os.getenv("NODE_ENV") == "production"
-    samesite_val = "none" if is_prod else "lax"
-    secure_val = True if is_prod else False
-    
+    # Always use samesite=none + secure=True: frontend (Vercel) and backend (Render)
+    # are always on different origins, so cross-origin cookies require these settings.
     response.set_cookie(
         key="token",
         value=jwt_token,
         httponly=True,
-        max_age=365 * 24 * 60 * 60, # 365 days
-        samesite=samesite_val,
-        secure=secure_val
+        max_age=365 * 24 * 60 * 60,  # 365 days
+        samesite="none",
+        secure=True
     )
     
     return {
@@ -193,17 +190,14 @@ def google_auth(payload: OAuthRequest, response: Response, db: Session = Depends
             
         jwt_token = create_access_token({"userId": user.id, "role": user.role.value})
         
-        is_prod = os.getenv("NODE_ENV") == "production"
-        samesite_val = "none" if is_prod else "lax"
-        secure_val = True if is_prod else False
-        
+        # Always cross-origin (Vercel + Render), so must always be none+secure
         response.set_cookie(
             key="token",
             value=jwt_token,
             httponly=True,
             max_age=365 * 24 * 60 * 60,
-            samesite=samesite_val,
-            secure=secure_val
+            samesite="none",
+            secure=True
         )
         
         return {
@@ -220,10 +214,7 @@ def google_auth(payload: OAuthRequest, response: Response, db: Session = Depends
 
 @router.post("/logout")
 def logout(response: Response):
-    is_prod = os.getenv("NODE_ENV") == "production"
-    samesite_val = "none" if is_prod else "lax"
-    secure_val = True if is_prod else False
-    response.delete_cookie(key="token", samesite=samesite_val, secure=secure_val, httponly=True)
+    response.delete_cookie(key="token", samesite="none", secure=True, httponly=True)
     return {"message": "Logged out successfully."}
 
 @router.get("/me")
