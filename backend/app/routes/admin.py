@@ -1,12 +1,18 @@
 import re
 import random
 import string
+import io
+import csv
+from datetime import date as date_type, datetime
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import Class, TimetableSlot, User, Role
-from app.schemas import ClassCreateRequest, TimetableSaveRequest
+from app.models import Class, TimetableSlot, User, Role, AttendanceLog, AttendanceStatus, Holiday
+from app.schemas import ClassCreateRequest, TimetableSaveRequest, AttendanceOverrideRequest, HolidayCreateRequest
 from app.auth_utils import require_role
+from app.routes.attendance import TERM_START_DATE, count_conducted_lectures, is_slot_for_student_batch
 
 router = APIRouter(prefix="/admin", tags=["Admin Control Panel"])
 
@@ -227,3 +233,246 @@ def save_timetable(class_id: str, payload: TimetableSaveRequest, db: Session = D
         db.rollback()
         print("Timetable sync error:", e)
         raise HTTPException(status_code=500, detail="Failed to update timetable.")
+
+@router.get("/classes/{class_id}/export")
+def export_class_attendance(class_id: str, db: Session = Depends(get_db)):
+    cls = db.query(Class).filter(Class.id == class_id).first()
+    if not cls:
+        raise HTTPException(status_code=404, detail="Class not found.")
+
+    students = db.query(User).filter(
+        User.class_id == class_id,
+        User.role == Role.STUDENT
+    ).order_by(User.name.asc()).all()
+
+    slots = db.query(TimetableSlot).filter(TimetableSlot.class_id == class_id).all()
+    today = date_type.today()
+
+    # Create CSV in memory
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # Header row
+    writer.writerow([
+        "Student Name", 
+        "Student Email", 
+        "Student Batch", 
+        "Subject Name", 
+        "Conducted Lectures", 
+        "Attended Lectures", 
+        "Attendance Percentage"
+    ])
+
+    for student in students:
+        student_slots = [s for s in slots if is_slot_for_student_batch(s.subject_name, student.batch)]
+        
+        # Group slot data by subject name to compute counts
+        subject_stats = {}
+        for slot in student_slots:
+            conducted = count_conducted_lectures(db, TERM_START_DATE, today, slot.day_of_week)
+            attended = db.query(AttendanceLog).filter(
+                AttendanceLog.student_id == student.id,
+                AttendanceLog.slot_id == slot.id,
+                AttendanceLog.status == AttendanceStatus.PRESENT
+            ).count()
+
+            if conducted < attended:
+                conducted = attended
+
+            subj_name = slot.subject_name
+            if subj_name not in subject_stats:
+                subject_stats[subj_name] = {"conducted": 0, "attended": 0}
+                
+            subject_stats[subj_name]["conducted"] += conducted
+            subject_stats[subj_name]["attended"] += attended
+
+        # If student has no timetable slots at all
+        if not subject_stats:
+            writer.writerow([
+                student.name,
+                student.email,
+                student.batch or "N/A",
+                "No slots found",
+                0,
+                0,
+                "0.0%"
+            ])
+        else:
+            for name, stats in subject_stats.items():
+                pct = round((stats["attended"] / stats["conducted"] * 100), 1) if stats["conducted"] > 0 else 0.0
+                writer.writerow([
+                    student.name,
+                    student.email,
+                    student.batch or "N/A",
+                    name,
+                    stats["conducted"],
+                    stats["attended"],
+                    f"{pct}%"
+                ])
+
+    # Seek to start
+    output.seek(0)
+    
+    # Return as StreamingResponse
+    headers = {
+        'Content-Disposition': f'attachment; filename="attendance_report_{cls.class_code}.csv"'
+    }
+    return StreamingResponse(output, media_type="text/csv", headers=headers)
+
+@router.get("/classes/{class_id}/attendance")
+def get_class_attendance_roster(class_id: str, date: str, slot_id: str, db: Session = Depends(get_db)):
+    try:
+        try:
+            target_date = datetime.strptime(date.strip(), "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Expected YYYY-MM-DD.")
+
+        cls = db.query(Class).filter(Class.id == class_id).first()
+        if not cls:
+            raise HTTPException(status_code=404, detail="Class not found.")
+
+        slot = db.query(TimetableSlot).filter(TimetableSlot.id == slot_id, TimetableSlot.class_id == class_id).first()
+        if not slot:
+            raise HTTPException(status_code=404, detail="Timetable slot not found for this class.")
+
+        students = db.query(User).filter(
+            User.class_id == class_id,
+            User.role == Role.STUDENT
+        ).order_by(User.name.asc()).all()
+
+        logs = db.query(AttendanceLog).filter(
+            AttendanceLog.slot_id == slot_id,
+            AttendanceLog.date == target_date
+        ).all()
+        
+        logs_map = {log.student_id: log.status.value for log in logs}
+
+        result = []
+        for s in students:
+            is_applicable = is_slot_for_student_batch(slot.subject_name, s.batch)
+            result.append({
+                "id": s.id,
+                "name": s.name,
+                "email": s.email,
+                "batch": s.batch,
+                "status": logs_map.get(s.id, None),
+                "is_applicable": is_applicable
+            })
+
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        print("Get class attendance roster error:", e)
+        raise HTTPException(status_code=500, detail="Failed to retrieve class attendance roster.")
+
+@router.post("/attendance/override")
+def override_attendance(payload: AttendanceOverrideRequest, db: Session = Depends(get_db)):
+    try:
+        try:
+            target_date = datetime.strptime(payload.date.strip(), "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Expected YYYY-MM-DD.")
+
+        status_upper = payload.status.strip().upper()
+        if status_upper not in ["PRESENT", "ABSENT"]:
+            raise HTTPException(status_code=400, detail="Status must be either 'PRESENT' or 'ABSENT'.")
+
+        student = db.query(User).filter(User.id == payload.student_id, User.role == Role.STUDENT).first()
+        if not student:
+            raise HTTPException(status_code=404, detail="Student not found.")
+
+        slot = db.query(TimetableSlot).filter(TimetableSlot.id == payload.slot_id).first()
+        if not slot:
+            raise HTTPException(status_code=404, detail="Timetable slot not found.")
+
+        log = db.query(AttendanceLog).filter(
+            AttendanceLog.student_id == payload.student_id,
+            AttendanceLog.slot_id == payload.slot_id,
+            AttendanceLog.date == target_date
+        ).first()
+
+        if log:
+            log.status = AttendanceStatus[status_upper]
+            log.updatedAt = func.now()
+        else:
+            log = AttendanceLog(
+                student_id=payload.student_id,
+                slot_id=payload.slot_id,
+                date=target_date,
+                status=AttendanceStatus[status_upper]
+            )
+            db.add(log)
+
+        db.commit()
+        return {"message": f"Attendance successfully overridden to {status_upper}."}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        print("Override attendance error:", e)
+        raise HTTPException(status_code=500, detail="Failed to override attendance.")
+
+@router.get("/holidays")
+def get_holidays(db: Session = Depends(get_db)):
+    try:
+        holidays = db.query(Holiday).order_by(Holiday.date.asc()).all()
+        return [
+            {
+                "id": h.id,
+                "date": h.date.isoformat(),
+                "name": h.name
+            } for h in holidays
+        ]
+    except Exception as e:
+        print("Get holidays error:", e)
+        raise HTTPException(status_code=500, detail="Failed to retrieve holidays.")
+
+@router.post("/holidays", status_code=status.HTTP_201_CREATED)
+def create_holiday(payload: HolidayCreateRequest, db: Session = Depends(get_db)):
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Holiday name is required.")
+
+    try:
+        holiday_date = datetime.strptime(payload.date.strip(), "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Expected YYYY-MM-DD.")
+
+    existing = db.query(Holiday).filter(Holiday.date == holiday_date).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"A holiday is already declared for {holiday_date} ({existing.name}).")
+
+    new_holiday = Holiday(
+        date=holiday_date,
+        name=name
+    )
+
+    try:
+        db.add(new_holiday)
+        db.commit()
+        db.refresh(new_holiday)
+        return {
+            "id": new_holiday.id,
+            "date": new_holiday.date.isoformat(),
+            "name": new_holiday.name
+        }
+    except Exception as e:
+        db.rollback()
+        print("Create holiday error:", e)
+        raise HTTPException(status_code=500, detail="Failed to declare holiday.")
+
+@router.delete("/holidays/{holiday_id}")
+def delete_holiday(holiday_id: str, db: Session = Depends(get_db)):
+    holiday = db.query(Holiday).filter(Holiday.id == holiday_id).first()
+    if not holiday:
+        raise HTTPException(status_code=404, detail="Holiday not found.")
+
+    try:
+        db.delete(holiday)
+        db.commit()
+        return {"message": "Holiday deleted successfully."}
+    except Exception as e:
+        db.rollback()
+        print("Delete holiday error:", e)
+        raise HTTPException(status_code=500, detail="Failed to delete holiday.")

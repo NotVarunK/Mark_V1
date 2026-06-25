@@ -53,6 +53,14 @@ app.include_router(admin_router, prefix="/api")
 app.include_router(student_router, prefix="/api")
 app.include_router(attendance_router, prefix="/api")
 
+# @app.put("/api/attendance/override/{log_id}")
+# async def update_attendance(log_id: int, status: str, current_user: User = Depends(get_current_admin)):
+#     # This searches for the specific attendance record in Neon
+#     # and updates the 'status' column to 'PRESENT' or 'ABSENT'
+#     db.query(AttendanceLog).filter(AttendanceLog.id == log_id).update({"status": status})
+#     db.commit()
+#     return {"message": "Attendance updated successfully"}
+
 @app.get("/health")
 def health_check():
     return {"status": "OK", "time": datetime.utcnow().isoformat()}

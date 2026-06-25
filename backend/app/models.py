@@ -66,6 +66,7 @@ class AttendanceLog(Base):
     slot_id = Column(String, ForeignKey("TimetableSlot.id", ondelete="CASCADE"), nullable=False)
     date = Column(Date, nullable=False)
     status = Column(Enum(AttendanceStatus, name="AttendanceStatus"), default=AttendanceStatus.PRESENT, nullable=False)
+    device_fingerprint = Column(String, nullable=True)
     createdAt = Column(DateTime(timezone=True), server_default=func.now())
     updatedAt = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
 
@@ -75,3 +76,12 @@ class AttendanceLog(Base):
     __table_args__ = (
         UniqueConstraint("student_id", "slot_id", "date", name="AttendanceLog_student_id_slot_id_date_key"),
     )
+
+class Holiday(Base):
+    __tablename__ = "Holiday"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    date = Column(Date, unique=True, nullable=False)
+    name = Column(String, nullable=False)
+    createdAt = Column(DateTime(timezone=True), server_default=func.now())
+    updatedAt = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())

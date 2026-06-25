@@ -4,7 +4,7 @@ from datetime import datetime, date as date_type, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import Class, TimetableSlot, AttendanceLog, User, Role, AttendanceStatus
+from app.models import Class, TimetableSlot, AttendanceLog, User, Role, AttendanceStatus, Holiday
 from app.schemas import CheckinRequest
 from app.auth_utils import get_current_user
 
@@ -42,6 +42,34 @@ def count_days_between(start_date: date_type, end_date: date_type, target_day_na
             count += 1
         curr += timedelta(days=1)
     return count
+
+def count_conducted_lectures(db: Session, start_date: date_type, end_date: date_type, target_day_name: str) -> int:
+    days_map = {
+        "Sunday": 6, "Monday": 0, "Tuesday": 1, "Wednesday": 2,
+        "Thursday": 3, "Friday": 4, "Saturday": 5
+    }
+    target_weekday = days_map.get(target_day_name)
+    if target_weekday is None:
+        return 0
+        
+    raw_count = 0
+    curr = start_date
+    while curr <= end_date:
+        if curr.weekday() == target_weekday:
+            raw_count += 1
+        curr += timedelta(days=1)
+        
+    holidays = db.query(Holiday).filter(
+        Holiday.date >= start_date,
+        Holiday.date <= end_date
+    ).all()
+    
+    holiday_deductions = 0
+    for h in holidays:
+        if h.date.weekday() == target_weekday:
+            holiday_deductions += 1
+            
+    return max(0, raw_count - holiday_deductions)
 
 @router.post("/checkin", status_code=status.HTTP_201_CREATED)
 def checkin(payload: CheckinRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -94,6 +122,14 @@ def checkin(payload: CheckinRequest, db: Session = Depends(get_db), current_user
                 detail="Invalid date format. Must be YYYY-MM-DD."
             )
 
+    # Check if this date is a holiday
+    holiday = db.query(Holiday).filter(Holiday.date == checkin_date).first()
+    if holiday:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Check-in disabled. Today is a declared holiday: {holiday.name}."
+        )
+
     # Check if already checked in (to return 409 Conflict)
     log = db.query(AttendanceLog).filter(
         AttendanceLog.student_id == current_user.id,
@@ -107,12 +143,30 @@ def checkin(payload: CheckinRequest, db: Session = Depends(get_db), current_user
             detail="Already checked in for this slot."
         )
 
+    # Proxy fingerprint protection check
+    if payload.device_fingerprint:
+        existing_proxy = db.query(AttendanceLog).filter(
+            AttendanceLog.slot_id == slot.id,
+            AttendanceLog.date == checkin_date,
+            AttendanceLog.device_fingerprint == payload.device_fingerprint,
+            AttendanceLog.student_id != current_user.id
+        ).first()
+
+        if existing_proxy:
+            other_user = db.query(User).filter(User.id == existing_proxy.student_id).first()
+            other_name = other_user.name if other_user else "another student"
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Proxy check-in detected. This device has already been used by {other_name} to check in for this slot."
+            )
+
     try:
         log = AttendanceLog(
             student_id=current_user.id,
             slot_id=slot.id,
             date=checkin_date,
-            status=AttendanceStatus.PRESENT
+            status=AttendanceStatus.PRESENT,
+            device_fingerprint=payload.device_fingerprint
         )
         db.add(log)
         db.commit()
@@ -177,10 +231,11 @@ def get_dashboard(db: Session = Depends(get_db), current_user: User = Depends(ge
     total_attended = 0
 
     for slot in student_slots:
-        conducted = count_days_between(TERM_START_DATE, today, slot.day_of_week)
+        conducted = count_conducted_lectures(db, TERM_START_DATE, today, slot.day_of_week)
         attended = db.query(AttendanceLog).filter(
             AttendanceLog.student_id == current_user.id,
-            AttendanceLog.slot_id == slot.id
+            AttendanceLog.slot_id == slot.id,
+            AttendanceLog.status == AttendanceStatus.PRESENT
         ).count()
 
         # In case dates out of bounds:
@@ -224,7 +279,7 @@ def get_dashboard(db: Session = Depends(get_db), current_user: User = Depends(ge
         # Calculate conducted slots count for this student
         student_conducted = 0
         for slot in student_slots:
-            student_conducted += count_days_between(TERM_START_DATE, today, slot.day_of_week)
+            student_conducted += count_conducted_lectures(db, TERM_START_DATE, today, slot.day_of_week)
             
         # Find attendance logs marked PRESENT for this student for their batch slots
         student_slots_ids = {s.id for s in student_slots}
@@ -259,7 +314,7 @@ def get_dashboard(db: Session = Depends(get_db), current_user: User = Depends(ge
             
         # Count how many students in the class belong to a batch that is allowed for this slot
         matching_students_count = sum(1 for stu in students if is_slot_for_student_batch(slot.subject_name, stu.batch))
-        conducted_occurrences = count_days_between(TERM_START_DATE, today, slot.day_of_week)
+        conducted_occurrences = count_conducted_lectures(db, TERM_START_DATE, today, slot.day_of_week)
         subject_class_map[subj_name]["conducted"] += conducted_occurrences * matching_students_count
 
     # Gather all logs for all students in this class
@@ -315,3 +370,18 @@ def get_dashboard(db: Session = Depends(get_db), current_user: User = Depends(ge
             } for log in logs
         ]
     }
+
+@router.get("/holidays")
+def get_holidays_public(db: Session = Depends(get_db)):
+    try:
+        holidays = db.query(Holiday).order_by(Holiday.date.asc()).all()
+        return [
+            {
+                "id": h.id,
+                "date": h.date.isoformat(),
+                "name": h.name
+            } for h in holidays
+        ]
+    except Exception as e:
+        print("Get public holidays error:", e)
+        raise HTTPException(status_code=500, detail="Failed to retrieve holidays.")

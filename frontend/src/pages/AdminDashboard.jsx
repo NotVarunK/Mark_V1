@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { GraduationCap, Copy, Check, Plus, Trash2, Calendar, ClipboardList, Users, LogOut, Sun, Moon, Edit2, X, UserMinus } from 'lucide-react';
+import { GraduationCap, Copy, Check, Plus, Trash2, Calendar, ClipboardList, Users, LogOut, Sun, Moon, Edit2, X, UserMinus, UserCheck, UserX, Palmtree } from 'lucide-react';
 import Toast from '../components/Toast';
 
 export const AdminDashboard = () => {
@@ -27,11 +27,47 @@ export const AdminDashboard = () => {
   const [slots, setSlots] = useState([]);
   const [timetableLoading, setTimetableLoading] = useState(false);
 
+  // Primary Navigation Tab State
+  const [activeAdminTab, setActiveAdminTab] = useState('setup'); // 'setup' | 'overrides' | 'holidays'
+
+  // Manual Overrides State
+  const [overrideClassId, setOverrideClassId] = useState('');
+  const [overrideDate, setOverrideDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [overrideSlotId, setOverrideSlotId] = useState('');
+  const [overrideRoster, setOverrideRoster] = useState([]);
+  const [rosterLoading, setRosterLoading] = useState(false);
+
+  // Holidays Manager State
+  const [holidays, setHolidays] = useState([]);
+  const [holidayDate, setHolidayDate] = useState('');
+  const [holidayName, setHolidayName] = useState('');
+  const [holidaysLoading, setHolidaysLoading] = useState(false);
+  const [addHolidayLoading, setAddHolidayLoading] = useState(false);
+
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
   useEffect(() => {
     fetchClasses();
+    fetchHolidays();
   }, []);
+
+  useEffect(() => {
+    const selected = classes.find(c => c.id === overrideClassId);
+    if (selected && selected.timetable && selected.timetable.length > 0) {
+      setOverrideSlotId(selected.timetable[0].id);
+    } else {
+      setOverrideSlotId('');
+      setOverrideRoster([]);
+    }
+  }, [overrideClassId, classes]);
+
+  useEffect(() => {
+    if (overrideClassId && overrideDate && overrideSlotId) {
+      fetchOverrideRoster();
+    } else {
+      setOverrideRoster([]);
+    }
+  }, [overrideClassId, overrideDate, overrideSlotId]);
 
   const showToast = (message, type = 'info') => {
     setToast({ message, type });
@@ -43,10 +79,13 @@ export const AdminDashboard = () => {
       if (res.ok) {
         const data = await res.json();
         setClasses(data);
-        if (data.length > 0 && !selectedClass) {
-          // Auto-select first class
-          setSelectedClass(data[0]);
-          setSlots(data[0].timetable || []);
+        if (data.length > 0) {
+          if (!selectedClass) {
+            // Auto-select first class
+            setSelectedClass(data[0]);
+            setSlots(data[0].timetable || []);
+          }
+          setOverrideClassId(prev => prev || data[0].id);
         } else if (selectedClass) {
           // Update selected class with fresh data
           const updated = data.find(c => c.id === selectedClass.id);
@@ -59,6 +98,120 @@ export const AdminDashboard = () => {
     } catch (err) {
       console.error(err);
       showToast('Failed to fetch classes.', 'error');
+    }
+  };
+
+  const fetchHolidays = async () => {
+    setHolidaysLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/admin/holidays`, { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        setHolidays(data);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setHolidaysLoading(false);
+    }
+  };
+
+  const handleAddHoliday = async (e) => {
+    e.preventDefault();
+    if (!holidayDate || !holidayName.trim()) {
+      showToast('Please fill all holiday fields.', 'warning');
+      return;
+    }
+    setAddHolidayLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/admin/holidays`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: holidayDate,
+          name: holidayName.trim()
+        }),
+        credentials: 'include'
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast('Holiday declared successfully!', 'success');
+        setHolidayDate('');
+        setHolidayName('');
+        fetchHolidays();
+      } else {
+        showToast(data.error || 'Failed to add holiday.', 'error');
+      }
+    } catch (err) {
+      showToast('Server error declaring holiday.', 'error');
+    } finally {
+      setAddHolidayLoading(false);
+    }
+  };
+
+  const handleDeleteHoliday = async (holidayId) => {
+    const confirmed = window.confirm('Are you sure you want to delete this holiday? Check-ins on this day will be re-enabled.');
+    if (!confirmed) return;
+    try {
+      const res = await fetch(`${API_BASE}/admin/holidays/${holidayId}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast('Holiday deleted successfully!', 'success');
+        fetchHolidays();
+      } else {
+        showToast(data.error || 'Failed to delete holiday.', 'error');
+      }
+    } catch (err) {
+      showToast('Server error deleting holiday.', 'error');
+    }
+  };
+
+  const fetchOverrideRoster = async () => {
+    setRosterLoading(true);
+    try {
+      const res = await fetch(
+        `${API_BASE}/admin/classes/${overrideClassId}/attendance?date=${overrideDate}&slot_id=${overrideSlotId}`,
+        { credentials: 'include' }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setOverrideRoster(data);
+      } else {
+        setOverrideRoster([]);
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Error loading attendance roster.', 'error');
+    } finally {
+      setRosterLoading(false);
+    }
+  };
+
+  const handleOverrideAttendance = async (studentId, status) => {
+    try {
+      const res = await fetch(`${API_BASE}/admin/attendance/override`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          student_id: studentId,
+          slot_id: overrideSlotId,
+          date: overrideDate,
+          status: status
+        }),
+        credentials: 'include'
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(`Marked student as ${status.toLowerCase()} successfully!`, 'success');
+        fetchOverrideRoster();
+      } else {
+        showToast(data.error || 'Failed to override attendance.', 'error');
+      }
+    } catch (err) {
+      showToast('Error sending manual override.', 'error');
     }
   };
 
@@ -333,402 +486,751 @@ export const AdminDashboard = () => {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Left column: Class Creator and Selector */}
-        <div className="lg:col-span-4 space-y-8">
-          {/* Class Creator / Editor Card */}
-          <div className={`rounded-card p-6 transition-all duration-300 ${
-            darkMode ? 'bg-[#121212] border border-brand-emerald/20 text-white' : 'bg-white text-zinc-800 shadow-card border border-zinc-100'
-          }`}>
-            {editingClass ? (
-              <>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className={`text-lg font-bold flex items-center gap-2 ${darkMode ? 'text-white' : 'text-zinc-950'}`}>
-                    <ClipboardList className="w-5 h-5 text-brand-emerald" />
-                    Edit Class Details
-                  </h3>
-                  <button 
-                    onClick={handleCancelEdit}
-                    className={`p-1.5 rounded-lg transition-colors ${darkMode ? 'hover:bg-zinc-800 text-zinc-400 hover:text-white' : 'hover:bg-zinc-100 text-zinc-500 hover:text-zinc-950'}`}
-                    title="Cancel Edit"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-                
-                <form onSubmit={handleUpdateClass} className="space-y-4">
-                  <div>
-                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mb-1.5">Stream Name</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Computer Engineering"
-                      value={editStream}
-                      onChange={(e) => setEditStream(e.target.value)}
-                      className={`w-full px-4 py-2.5 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-emerald/10 focus:border-brand-emerald transition-all ${
-                        darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-200 text-zinc-800'
-                      }`}
-                      required
-                    />
-                  </div>
+      {/* Navigation Tabs */}
+      <div className="flex border-b border-white/10 mb-8 max-w-7xl mx-auto gap-6 px-4 md:px-0">
+        <button
+          onClick={() => setActiveAdminTab('setup')}
+          className={`flex items-center gap-2 pb-3 text-sm font-extrabold transition-all border-b-2 ${
+            activeAdminTab === 'setup'
+              ? 'border-brand-emerald text-brand-emerald'
+              : 'border-transparent text-white/60 hover:text-white'
+          }`}
+        >
+          <ClipboardList className="w-4 h-4" />
+          Classes & Timetable
+        </button>
+        <button
+          onClick={() => setActiveAdminTab('overrides')}
+          className={`flex items-center gap-2 pb-3 text-sm font-extrabold transition-all border-b-2 ${
+            activeAdminTab === 'overrides'
+              ? 'border-brand-emerald text-brand-emerald'
+              : 'border-transparent text-white/60 hover:text-white'
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          Roster Overrides
+        </button>
+        <button
+          onClick={() => setActiveAdminTab('holidays')}
+          className={`flex items-center gap-2 pb-3 text-sm font-extrabold transition-all border-b-2 ${
+            activeAdminTab === 'holidays'
+              ? 'border-brand-emerald text-brand-emerald'
+              : 'border-transparent text-white/60 hover:text-white'
+          }`}
+        >
+          <Palmtree className="w-4 h-4" />
+          Declare Holidays
+        </button>
+      </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mb-1.5">Academic Year</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. 2026"
-                        value={editAcademicYear}
-                        onChange={(e) => setEditAcademicYear(e.target.value)}
-                        className={`w-full px-4 py-2.5 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-emerald/10 focus:border-brand-emerald transition-all ${
-                          darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-200 text-zinc-800'
-                        }`}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mb-1.5">Division</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. A"
-                        value={editDivision}
-                        onChange={(e) => setEditDivision(e.target.value)}
-                        className={`w-full px-4 py-2.5 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-emerald/10 focus:border-brand-emerald transition-all ${
-                          darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-200 text-zinc-800'
-                        }`}
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex gap-3 mt-5">
-                    <button
-                      type="button"
-                      onClick={handleCancelEdit}
-                      className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all border ${
-                        darkMode ? 'border-zinc-800 text-zinc-400 hover:bg-zinc-900 hover:text-white' : 'border-zinc-200 text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900'
-                      }`}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={creatorLoading}
-                      className="flex-1 bg-brand-emerald hover:bg-brand-secondary text-white py-3 px-6 rounded-xl font-bold text-sm shadow-md transition-all disabled:opacity-50"
-                    >
-                      {creatorLoading ? 'Saving...' : 'Save Changes'}
-                    </button>
-                  </div>
-                </form>
-              </>
-            ) : (
-              <>
-                <h3 className={`text-lg font-bold flex items-center gap-2 mb-4 ${darkMode ? 'text-white' : 'text-zinc-950'}`}>
-                  <ClipboardList className="w-5 h-5 text-brand-emerald" />
-                  Create Class
-                </h3>
-                <form onSubmit={handleCreateClass} className="space-y-4">
-                  <div>
-                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mb-1.5">Stream Name</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Computer Engineering"
-                      value={stream}
-                      onChange={(e) => setStream(e.target.value)}
-                      className={`w-full px-4 py-2.5 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-emerald/10 focus:border-brand-emerald transition-all ${
-                        darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-200 text-zinc-800'
-                      }`}
-                      required
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mb-1.5">Academic Year</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. 2026"
-                        value={academicYear}
-                        onChange={(e) => setAcademicYear(e.target.value)}
-                        className={`w-full px-4 py-2.5 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-emerald/10 focus:border-brand-emerald transition-all ${
-                          darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-200 text-zinc-800'
-                        }`}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mb-1.5">Division</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. A"
-                        value={division}
-                        onChange={(e) => setDivision(e.target.value)}
-                        className={`w-full px-4 py-2.5 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-emerald/10 focus:border-brand-emerald transition-all ${
-                          darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-200 text-zinc-800'
-                        }`}
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={creatorLoading}
-                    className="w-full bg-brand-emerald hover:bg-brand-secondary text-white py-3 rounded-xl font-bold text-sm shadow-md transition-all disabled:opacity-50"
-                  >
-                    {creatorLoading ? 'Generating...' : 'Generate Class Code'}
-                  </button>
-                </form>
-
-                {generatedCode && (
-                  <div className={`mt-5 p-4 rounded-2xl border flex items-center justify-between ${
-                    darkMode ? 'bg-brand-emerald/10 border-brand-emerald/20 text-brand-emerald' : 'bg-emerald-50 border-emerald-100'
-                  }`}>
-                    <div>
-                      <div className="text-[10px] text-brand-emerald font-extrabold uppercase tracking-wider">Generated Class Code</div>
-                      <div className={`text-2xl font-black tracking-wider mt-0.5 ${darkMode ? 'text-white' : 'text-zinc-950'}`}>{generatedCode}</div>
-                    </div>
-                    <button
-                      onClick={copyToClipboard}
-                      className="p-3 bg-brand-emerald hover:bg-brand-secondary text-white rounded-xl shadow-sm transition-all"
-                      title="Copy Code"
-                    >
-                      {copied ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
-                    </button>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-
-
-          {/* Class Selector List */}
-          <div className={`rounded-card border p-6 transition-all duration-300 ${
-            darkMode ? 'bg-[#121212] border-brand-emerald/20' : 'bg-brand-glass border-white/10'
-          }`}>
-            <h3 className="text-lg font-bold flex items-center gap-2 mb-4">
-              <Users className="w-5 h-5 text-brand-emerald" />
-              Active Classes ({classes.length})
-            </h3>
-            {classes.length === 0 ? (
-              <p className="text-sm text-white/50">No classes created yet. Use the form above to add your first academic stream.</p>
-            ) : (
-              <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1 no-scrollbar">
-                {classes.map(cls => (
-                  <div
-                    key={cls.id}
-                    className={`relative rounded-2xl border transition-all ${
-                      selectedClass?.id === cls.id
-                        ? 'bg-brand-emerald border-transparent text-white shadow-lg shadow-brand-emerald/15'
-                        : darkMode
-                        ? 'bg-zinc-900 border-zinc-800 hover:bg-zinc-800/80 text-white/80 hover:text-white'
-                        : 'bg-white/5 border-white/5 hover:bg-white/10 text-white/80 hover:text-white'
-                    }`}
-                  >
-                    <button
-                      onClick={() => handleSelectClass(cls)}
-                      className="w-full text-left p-4 pr-12"
-                    >
-                      <div className="text-xs uppercase font-extrabold opacity-70">Code: {cls.class_code}</div>
-                      <div className="text-sm font-black mt-0.5">{cls.stream}</div>
-                      <div className="flex items-center justify-between text-xs mt-2 opacity-80 font-semibold">
-                        <span>Div: {cls.division} ({cls.academic_year})</span>
-                        <span>{cls._count?.students || 0} Students</span>
-                      </div>
-                    </button>
-                    <button
-                      onClick={(e) => handleStartEdit(cls, e)}
-                      className={`absolute top-4.5 right-4 p-2 rounded-xl transition-all ${
-                        selectedClass?.id === cls.id
-                          ? 'text-white hover:bg-white/20'
-                          : 'text-zinc-400 hover:text-white hover:bg-white/5'
-                      }`}
-                      title="Edit Class Details"
-                    >
-                      <Edit2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
-
-              </div>
-            )}
-          </div>
-
-          {/* Student Roster Card */}
-          {selectedClass && (
-            <div className={`rounded-card p-6 border transition-all duration-300 ${
-              darkMode ? 'bg-[#121212] border-brand-emerald/20 text-white' : 'bg-white text-zinc-800 shadow-card border-zinc-100'
-            }`}>
-              <h3 className={`text-lg font-bold flex items-center gap-2 mb-4 ${darkMode ? 'text-white' : 'text-zinc-950'}`}>
-                <Users className="w-5 h-5 text-brand-emerald" />
-                Student Roster ({selectedClass.students?.length || 0})
-              </h3>
-              
-              {!selectedClass.students || selectedClass.students.length === 0 ? (
-                <p className={`text-sm ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>
-                  No students have joined this class code yet. Share the code <span className="font-extrabold text-brand-emerald">{selectedClass.class_code}</span> with your students.
-                </p>
-              ) : (
-                <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1 no-scrollbar">
-                  {selectedClass.students.map(student => (
-                    <div
-                      key={student.id}
-                      className={`flex items-center justify-between p-3.5 rounded-2xl border transition-all ${
-                        darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-200 text-zinc-800'
-                      }`}
-                    >
-                      <div>
-                        <div className="font-bold text-sm">{student.name}</div>
-                        <div className={`text-xs mt-1 ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>{student.email}</div>
-                      </div>
-                      <button
-                        onClick={() => handleRemoveStudent(student.id, student.name)}
-                        className={`p-2 rounded-xl transition-all ${
-                          darkMode ? 'text-red-400 hover:bg-red-950/40' : 'text-red-500 hover:bg-red-50'
-                        }`}
-                        title="Remove Student from Class"
+      <main className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 px-4 md:px-0">
+        {activeAdminTab === 'setup' && (
+          <>
+            {/* Left column: Class Creator and Selector */}
+            <div className="lg:col-span-4 space-y-8">
+              {/* Class Creator / Editor Card */}
+              <div className={`rounded-card p-6 transition-all duration-300 ${
+                darkMode ? 'bg-[#121212] border border-brand-emerald/20 text-white' : 'bg-white text-zinc-800 shadow-card border border-zinc-100'
+              }`}>
+                {editingClass ? (
+                  <>
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className={`text-lg font-bold flex items-center gap-2 ${darkMode ? 'text-white' : 'text-zinc-950'}`}>
+                        <ClipboardList className="w-5 h-5 text-brand-emerald" />
+                        Edit Class Details
+                      </h3>
+                      <button 
+                        onClick={handleCancelEdit}
+                        className={`p-1.5 rounded-lg transition-colors ${darkMode ? 'hover:bg-zinc-800 text-zinc-400 hover:text-white' : 'hover:bg-zinc-100 text-zinc-500 hover:text-zinc-950'}`}
+                        title="Cancel Edit"
                       >
-                        <UserMinus className="w-4 h-4" />
+                        <X className="w-4 h-4" />
                       </button>
                     </div>
-                  ))}
+                    
+                    <form onSubmit={handleUpdateClass} className="space-y-4">
+                      <div>
+                        <label className="block text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mb-1.5">Stream Name</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Computer Engineering"
+                          value={editStream}
+                          onChange={(e) => setEditStream(e.target.value)}
+                          className={`w-full px-4 py-2.5 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-emerald/10 focus:border-brand-emerald transition-all ${
+                            darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-200 text-zinc-800'
+                          }`}
+                          required
+                        />
+                      </div>
 
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Right column: Timetable Builder */}
-        <div className="lg:col-span-8">
-          <div className={`rounded-card p-6 transition-all duration-300 ${
-            darkMode ? 'bg-[#121212] border border-brand-emerald/20 text-white' : 'bg-white text-zinc-800 border border-zinc-100 shadow-card'
-          }`}>
-            <div className={`flex flex-col sm:flex-row sm:items-center sm:justify-between border-b pb-4 mb-6 ${
-              darkMode ? 'border-zinc-800' : 'border-zinc-100'
-            }`}>
-              <div>
-                <h3 className={`text-lg font-bold flex items-center gap-2 ${darkMode ? 'text-white' : 'text-zinc-950'}`}>
-                  <Calendar className="w-5 h-5 text-brand-emerald" />
-                  Timetable Builder
-                </h3>
-                {selectedClass && (
-                  <p className="text-xs text-zinc-400 mt-1 font-semibold">
-                    Managing Schedule for: <span className={darkMode ? 'text-zinc-300' : 'text-zinc-600'}>{selectedClass.stream} - Div {selectedClass.division}</span>
-                  </p>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-2 mt-3 sm:mt-0">
-                <button
-                  onClick={loadSampleTimetable}
-                  disabled={!selectedClass}
-                  className={`font-bold text-xs px-4 py-2.5 rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50 ${
-                    darkMode ? 'bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-white' : 'bg-brand-teal text-white hover:bg-zinc-800'
-                  }`}
-                >
-                  Load Sample Timetable
-                </button>
-                <button
-                  onClick={addSlot}
-                  disabled={!selectedClass}
-                  className="bg-brand-emerald hover:bg-brand-secondary text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-sm transition-all flex items-center justify-center gap-2.5 disabled:opacity-50"
-                >
-                  <Plus className="w-4 h-4" />
-                  Add Slot
-                </button>
-              </div>
-            </div>
-
-            {!selectedClass ? (
-              <div className="py-20 text-center text-zinc-400">
-                <Calendar className="w-12 h-12 mx-auto text-zinc-300 mb-4" />
-                <p className="text-sm font-semibold">Create or Select a class from the left panel to load the timetable editor.</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {slots.length === 0 ? (
-                  <div className="py-12 text-center border-2 border-dashed border-zinc-200 rounded-2xl text-zinc-400">
-                    <p className="text-sm font-semibold mb-3">No timetable slots configured for this class.</p>
-                    <button
-                      onClick={addSlot}
-                      className="bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs px-4.5 py-2.5 rounded-xl transition-colors"
-                    >
-                      Configure First Slot
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-3 max-h-[450px] overflow-y-auto pr-1 no-scrollbar">
-                    {slots.map((slot, index) => (
-                      <div 
-                        key={index} 
-                        className={`flex flex-col md:flex-row items-stretch md:items-center gap-3 p-4.5 border rounded-2xl transition-all duration-300 ${
-                          darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-50 border-zinc-100'
-                        }`}
-                      >
-                        {/* Day Selector */}
-                        <div className="w-full md:w-40">
-                          <label className="block md:hidden text-[9px] font-extrabold text-zinc-400 uppercase mb-1">Day</label>
-                          <select
-                            value={slot.day_of_week}
-                            onChange={(e) => handleSlotChange(index, 'day_of_week', e.target.value)}
-                            className={`w-full px-3 py-2 border rounded-xl text-xs font-bold focus:outline-none focus:border-brand-emerald ${
-                              darkMode ? 'bg-zinc-950 border-zinc-800 text-white' : 'bg-white border-zinc-200 text-zinc-800'
-                            }`}
-                          >
-                            {daysList.map(day => <option key={day} value={day}>{day}</option>)}
-                          </select>
-                        </div>
-
-                        {/* Subject Input */}
-                        <div className="flex-1">
-                          <label className="block md:hidden text-[9px] font-extrabold text-zinc-400 uppercase mb-1">Subject Name</label>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mb-1.5">Academic Year</label>
                           <input
                             type="text"
-                            placeholder="e.g. DS / Python / DBMS"
-                            value={slot.subject_name}
-                            onChange={(e) => handleSlotChange(index, 'subject_name', e.target.value)}
-                            className={`w-full px-3 py-2 border rounded-xl text-xs font-bold focus:outline-none focus:border-brand-emerald ${
-                              darkMode ? 'bg-zinc-950 border-zinc-800 text-white' : 'bg-white border-zinc-200 text-zinc-800'
+                            placeholder="e.g. 2026"
+                            value={editAcademicYear}
+                            onChange={(e) => setEditAcademicYear(e.target.value)}
+                            className={`w-full px-4 py-2.5 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-emerald/10 focus:border-brand-emerald transition-all ${
+                              darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-200 text-zinc-800'
                             }`}
                             required
                           />
                         </div>
+                        <div>
+                          <label className="block text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mb-1.5">Division</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. A"
+                            value={editDivision}
+                            onChange={(e) => setEditDivision(e.target.value)}
+                            className={`w-full px-4 py-2.5 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-emerald/10 focus:border-brand-emerald transition-all ${
+                              darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-200 text-zinc-800'
+                            }`}
+                            required
+                          />
+                        </div>
+                      </div>
 
-                        {/* Time Selectors */}
-                        <div className="flex items-center gap-2">
-                          <div className="w-24">
-                            <label className="block md:hidden text-[9px] font-extrabold text-zinc-400 uppercase mb-1">Start</label>
-                            <select
-                              value={slot.start_time}
-                              onChange={(e) => handleSlotChange(index, 'start_time', e.target.value)}
-                              className={`w-full px-2.5 py-2 border rounded-xl text-xs font-bold focus:outline-none focus:border-brand-emerald ${
-                                darkMode ? 'bg-zinc-950 border-zinc-800 text-white' : 'bg-white border-zinc-200 text-zinc-800'
-                              }`}
-                            >
-                              {hoursList.map(h => <option key={h} value={h}>{h}</option>)}
-                            </select>
+                      <div className="flex gap-3 mt-5">
+                        <button
+                          type="button"
+                          onClick={handleCancelEdit}
+                          className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all border ${
+                            darkMode ? 'border-zinc-800 text-zinc-400 hover:bg-zinc-900 hover:text-white' : 'border-zinc-200 text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900'
+                          }`}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={creatorLoading}
+                          className="flex-1 bg-brand-emerald hover:bg-brand-secondary text-white py-3 px-6 rounded-xl font-bold text-sm shadow-md transition-all disabled:opacity-50"
+                        >
+                          {creatorLoading ? 'Saving...' : 'Save Changes'}
+                        </button>
+                      </div>
+                    </form>
+                  </>
+                ) : (
+                  <>
+                    <h3 className={`text-lg font-bold flex items-center gap-2 mb-4 ${darkMode ? 'text-white' : 'text-zinc-950'}`}>
+                      <ClipboardList className="w-5 h-5 text-brand-emerald" />
+                      Create Class
+                    </h3>
+                    <form onSubmit={handleCreateClass} className="space-y-4">
+                      <div>
+                        <label className="block text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mb-1.5">Stream Name</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Computer Engineering"
+                          value={stream}
+                          onChange={(e) => setStream(e.target.value)}
+                          className={`w-full px-4 py-2.5 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-emerald/10 focus:border-brand-emerald transition-all ${
+                            darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-200 text-zinc-800'
+                          }`}
+                          required
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mb-1.5">Academic Year</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. 2026"
+                            value={academicYear}
+                            onChange={(e) => setAcademicYear(e.target.value)}
+                            className={`w-full px-4 py-2.5 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-emerald/10 focus:border-brand-emerald transition-all ${
+                              darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-200 text-zinc-800'
+                            }`}
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mb-1.5">Division</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. A"
+                            value={division}
+                            onChange={(e) => setDivision(e.target.value)}
+                            className={`w-full px-4 py-2.5 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-emerald/10 focus:border-brand-emerald transition-all ${
+                              darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-200 text-zinc-800'
+                            }`}
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={creatorLoading}
+                        className="w-full bg-brand-emerald hover:bg-brand-secondary text-white py-3 rounded-xl font-bold text-sm shadow-md transition-all disabled:opacity-50"
+                      >
+                        {creatorLoading ? 'Generating...' : 'Generate Class Code'}
+                      </button>
+                    </form>
+
+                    {generatedCode && (
+                      <div className={`mt-5 p-4 rounded-2xl border flex items-center justify-between ${
+                        darkMode ? 'bg-brand-emerald/10 border-brand-emerald/20 text-brand-emerald' : 'bg-emerald-50 border-emerald-100'
+                      }`}>
+                        <div>
+                          <div className="text-[10px] text-brand-emerald font-extrabold uppercase tracking-wider">Generated Class Code</div>
+                          <div className={`text-2xl font-black tracking-wider mt-0.5 ${darkMode ? 'text-white' : 'text-zinc-950'}`}>{generatedCode}</div>
+                        </div>
+                        <button
+                          onClick={copyToClipboard}
+                          className="p-3 bg-brand-emerald hover:bg-brand-secondary text-white rounded-xl shadow-sm transition-all"
+                          title="Copy Code"
+                        >
+                          {copied ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {/* Class Selector List */}
+              <div className={`rounded-card border p-6 transition-all duration-300 ${
+                darkMode ? 'bg-[#121212] border-brand-emerald/20' : 'bg-brand-glass border-white/10'
+              }`}>
+                <h3 className="text-lg font-bold flex items-center gap-2 mb-4">
+                  <Users className="w-5 h-5 text-brand-emerald" />
+                  Active Classes ({classes.length})
+                </h3>
+                {classes.length === 0 ? (
+                  <p className="text-sm text-white/50">No classes created yet. Use the form above to add your first academic stream.</p>
+                ) : (
+                  <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1 no-scrollbar">
+                    {classes.map(cls => (
+                      <div
+                        key={cls.id}
+                        className={`relative rounded-2xl border transition-all ${
+                          selectedClass?.id === cls.id
+                            ? 'bg-brand-emerald border-transparent text-white shadow-lg shadow-brand-emerald/15'
+                            : darkMode
+                            ? 'bg-zinc-900 border-zinc-800 hover:bg-zinc-800/80 text-white/80 hover:text-white'
+                            : 'bg-white/5 border-white/5 hover:bg-white/10 text-white/80 hover:text-white'
+                        }`}
+                      >
+                        <button
+                          onClick={() => handleSelectClass(cls)}
+                          className="w-full text-left p-4 pr-12"
+                        >
+                          <div className="text-xs uppercase font-extrabold opacity-70">Code: {cls.class_code}</div>
+                          <div className="text-sm font-black mt-0.5">{cls.stream}</div>
+                          <div className="flex items-center justify-between text-xs mt-2 opacity-80 font-semibold">
+                            <span>Div: {cls.division} ({cls.academic_year})</span>
+                            <span>{cls._count?.students || 0} Students</span>
                           </div>
-                          <span className={`font-bold text-xs mt-4 md:mt-0 ${darkMode ? 'text-zinc-500' : 'text-zinc-400'}`}>to</span>
-                          <div className="w-24">
-                            <label className="block md:hidden text-[9px] font-extrabold text-zinc-400 uppercase mb-1">End</label>
-                            <select
-                              value={slot.end_time}
-                              onChange={(e) => handleSlotChange(index, 'end_time', e.target.value)}
-                              className={`w-full px-2.5 py-2 border rounded-xl text-xs font-bold focus:outline-none focus:border-brand-emerald ${
-                                darkMode ? 'bg-zinc-950 border-zinc-800 text-white' : 'bg-white border-zinc-200 text-zinc-800'
+                        </button>
+                        <button
+                          onClick={(e) => handleStartEdit(cls, e)}
+                          className={`absolute top-4.5 right-4 p-2 rounded-xl transition-all ${
+                            selectedClass?.id === cls.id
+                              ? 'text-white hover:bg-white/20'
+                              : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                          }`}
+                          title="Edit Class Details"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Student Roster Card */}
+              {selectedClass && (
+                <div className={`rounded-card p-6 border transition-all duration-300 ${
+                  darkMode ? 'bg-[#121212] border-brand-emerald/20 text-white' : 'bg-white text-zinc-800 shadow-card border-zinc-100'
+                }`}>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className={`text-lg font-bold flex items-center gap-2 ${darkMode ? 'text-white' : 'text-zinc-950'}`}>
+                      <Users className="w-5 h-5 text-brand-emerald" />
+                      Student Roster ({selectedClass.students?.length || 0})
+                    </h3>
+                    {selectedClass.students && selectedClass.students.length > 0 && (
+                      <button
+                        onClick={() => {
+                          window.open(`${API_BASE}/admin/classes/${selectedClass.id}/export`, '_blank');
+                        }}
+                        className={`text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 border rounded-lg transition-all ${
+                          darkMode ? 'border-brand-emerald/30 text-brand-emerald hover:bg-brand-emerald/10' : 'border-zinc-200 hover:bg-zinc-50 text-zinc-700'
+                        }`}
+                      >
+                        Export CSV
+                      </button>
+                    )}
+                  </div>
+                  
+                  {!selectedClass.students || selectedClass.students.length === 0 ? (
+                    <p className={`text-sm ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                      No students have joined this class code yet. Share the code <span className="font-extrabold text-brand-emerald">{selectedClass.class_code}</span> with your students.
+                    </p>
+                  ) : (
+                    <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1 no-scrollbar">
+                      {selectedClass.students.map(student => (
+                        <div
+                          key={student.id}
+                          className={`flex items-center justify-between p-3.5 rounded-2xl border transition-all ${
+                            darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-200 text-zinc-800'
+                          }`}
+                        >
+                          <div>
+                            <div className="font-bold text-sm">{student.name}</div>
+                            <div className={`text-xs mt-1 ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>{student.email}</div>
+                          </div>
+                          <button
+                            onClick={() => handleRemoveStudent(student.id, student.name)}
+                            className={`p-2 rounded-xl transition-all ${
+                              darkMode ? 'text-red-400 hover:bg-red-950/40' : 'text-red-500 hover:bg-red-50'
+                            }`}
+                            title="Remove Student from Class"
+                          >
+                            <UserMinus className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Right column: Timetable Builder */}
+            <div className="lg:col-span-8">
+              <div className={`rounded-card p-6 transition-all duration-300 ${
+                darkMode ? 'bg-[#121212] border border-brand-emerald/20 text-white' : 'bg-white text-zinc-800 border border-zinc-100 shadow-card'
+              }`}>
+                <div className={`flex flex-col sm:flex-row sm:items-center sm:justify-between border-b pb-4 mb-6 ${
+                  darkMode ? 'border-zinc-800' : 'border-zinc-100'
+                }`}>
+                  <div>
+                    <h3 className={`text-lg font-bold flex items-center gap-2 ${darkMode ? 'text-white' : 'text-zinc-950'}`}>
+                      <Calendar className="w-5 h-5 text-brand-emerald" />
+                      Timetable Builder
+                    </h3>
+                    {selectedClass && (
+                      <p className="text-xs text-zinc-400 mt-1 font-semibold">
+                        Managing Schedule for: <span className={darkMode ? 'text-zinc-300' : 'text-zinc-600'}>{selectedClass.stream} - Div {selectedClass.division}</span>
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2 mt-3 sm:mt-0">
+                    <button
+                      onClick={loadSampleTimetable}
+                      disabled={!selectedClass}
+                      className={`font-bold text-xs px-4 py-2.5 rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50 ${
+                        darkMode ? 'bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-white' : 'bg-brand-teal text-white hover:bg-zinc-800'
+                      }`}
+                    >
+                      Load Sample Timetable
+                    </button>
+                    <button
+                      onClick={addSlot}
+                      disabled={!selectedClass}
+                      className="bg-brand-emerald hover:bg-brand-secondary text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-sm transition-all flex items-center justify-center gap-2.5 disabled:opacity-50"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Add Slot
+                    </button>
+                  </div>
+                </div>
+
+                {!selectedClass ? (
+                  <div className="py-20 text-center text-zinc-400">
+                    <Calendar className="w-12 h-12 mx-auto text-zinc-300 mb-4" />
+                    <p className="text-sm font-semibold">Create or Select a class from the left panel to load the timetable editor.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {slots.length === 0 ? (
+                      <div className="py-12 text-center border-2 border-dashed border-zinc-200 rounded-2xl text-zinc-400">
+                        <p className="text-sm font-semibold mb-3">No timetable slots configured for this class.</p>
+                        <button
+                          onClick={addSlot}
+                          className="bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs px-4.5 py-2.5 rounded-xl transition-colors"
+                        >
+                          Configure First Slot
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-3 max-h-[450px] overflow-y-auto pr-1 no-scrollbar">
+                        {slots.map((slot, index) => (
+                          <div 
+                            key={index} 
+                            className={`flex flex-col md:flex-row items-stretch md:items-center gap-3 p-4.5 border rounded-2xl transition-all duration-300 ${
+                              darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-50 border-zinc-100'
+                            }`}
+                          >
+                            <div className="w-full md:w-40">
+                              <label className="block md:hidden text-[9px] font-extrabold text-zinc-400 uppercase mb-1">Day</label>
+                              <select
+                                value={slot.day_of_week}
+                                onChange={(e) => handleSlotChange(index, 'day_of_week', e.target.value)}
+                                className={`w-full px-3 py-2 border rounded-xl text-xs font-bold focus:outline-none focus:border-brand-emerald ${
+                                  darkMode ? 'bg-zinc-950 border-zinc-800 text-white' : 'bg-white border-zinc-200 text-zinc-800'
+                                }`}
+                              >
+                                {daysList.map(day => <option key={day} value={day}>{day}</option>)}
+                              </select>
+                            </div>
+
+                            <div className="flex-1">
+                              <label className="block md:hidden text-[9px] font-extrabold text-zinc-400 uppercase mb-1">Subject Name</label>
+                              <input
+                                type="text"
+                                placeholder="e.g. DS / Python / DBMS"
+                                value={slot.subject_name}
+                                onChange={(e) => handleSlotChange(index, 'subject_name', e.target.value)}
+                                className={`w-full px-3 py-2 border rounded-xl text-xs font-bold focus:outline-none focus:border-brand-emerald ${
+                                  darkMode ? 'bg-zinc-950 border-zinc-800 text-white' : 'bg-white border-zinc-200 text-zinc-800'
+                                }`}
+                                required
+                              />
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <div className="w-24">
+                                <label className="block md:hidden text-[9px] font-extrabold text-zinc-400 uppercase mb-1">Start</label>
+                                <select
+                                  value={slot.start_time}
+                                  onChange={(e) => handleSlotChange(index, 'start_time', e.target.value)}
+                                  className={`w-full px-2.5 py-2 border rounded-xl text-xs font-bold focus:outline-none focus:border-brand-emerald ${
+                                    darkMode ? 'bg-zinc-950 border-zinc-800 text-white' : 'bg-white border-zinc-200 text-zinc-800'
+                                  }`}
+                                >
+                                  {hoursList.map(h => <option key={h} value={h}>{h}</option>)}
+                                </select>
+                              </div>
+                              <span className={`font-bold text-xs mt-4 md:mt-0 ${darkMode ? 'text-zinc-500' : 'text-zinc-400'}`}>to</span>
+                              <div className="w-24">
+                                <label className="block md:hidden text-[9px] font-extrabold text-zinc-400 uppercase mb-1">End</label>
+                                <select
+                                  value={slot.end_time}
+                                  onChange={(e) => handleSlotChange(index, 'end_time', e.target.value)}
+                                  className={`w-full px-2.5 py-2 border rounded-xl text-xs font-bold focus:outline-none focus:border-brand-emerald ${
+                                    darkMode ? 'bg-zinc-950 border-zinc-800 text-white' : 'bg-white border-zinc-200 text-zinc-800'
+                                  }`}
+                                >
+                                  {hoursList.map(h => <option key={h} value={h}>{h}</option>)}
+                                </select>
+                              </div>
+                            </div>
+
+                            <button
+                              onClick={() => removeSlot(index)}
+                              className={`p-2.5 rounded-xl transition-colors self-end md:self-auto ${
+                                darkMode ? 'bg-red-950/20 text-red-400 hover:bg-red-950/40' : 'bg-red-50 hover:bg-red-100 text-red-500'
                               }`}
+                              title="Remove Slot"
                             >
-                              {hoursList.map(h => <option key={h} value={h}>{h}</option>)}
-                            </select>
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className={`border-t pt-5 mt-6 flex justify-end ${
+                      darkMode ? 'border-zinc-800' : 'border-zinc-100'
+                    }`}>
+                      <button
+                        onClick={handleSaveTimetable}
+                        disabled={timetableLoading || slots.length === 0}
+                        className="w-full sm:w-auto bg-brand-emerald hover:bg-brand-secondary text-white py-3 px-8 rounded-xl font-bold text-sm shadow-md transition-all disabled:opacity-50"
+                      >
+                        {timetableLoading ? 'Saving...' : 'Save Timetable'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+
+        {activeAdminTab === 'overrides' && (
+          <>
+            {/* Selector Column */}
+            <div className="lg:col-span-4 space-y-6">
+              <div className={`rounded-card p-6 border transition-all duration-300 ${
+                darkMode ? 'bg-[#121212] border border-brand-emerald/20 text-white' : 'bg-white text-zinc-800 shadow-card border border-zinc-100'
+              }`}>
+                <h3 className={`text-lg font-bold flex items-center gap-2 mb-4 ${darkMode ? 'text-white' : 'text-zinc-950'}`}>
+                  <Calendar className="w-5 h-5 text-brand-emerald" />
+                  Override Parameters
+                </h3>
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mb-1.5">Select Class</label>
+                    <select
+                      value={overrideClassId}
+                      onChange={(e) => setOverrideClassId(e.target.value)}
+                      className={`w-full px-4 py-2.5 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-emerald/10 focus:border-brand-emerald transition-all ${
+                        darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-200 text-zinc-800'
+                      }`}
+                    >
+                      {classes.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.stream} - Div {c.division} ({c.class_code})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mb-1.5">Select Date</label>
+                    <input
+                      type="date"
+                      value={overrideDate}
+                      onChange={(e) => setOverrideDate(e.target.value)}
+                      className={`w-full px-4 py-2.5 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-emerald/10 focus:border-brand-emerald transition-all ${
+                        darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-200 text-zinc-800'
+                      }`}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mb-1.5">Select Timetable Slot</label>
+                    <select
+                      value={overrideSlotId}
+                      onChange={(e) => setOverrideSlotId(e.target.value)}
+                      className={`w-full px-4 py-2.5 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-emerald/10 focus:border-brand-emerald transition-all ${
+                        darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-200 text-zinc-800'
+                      }`}
+                    >
+                      {(() => {
+                        const selClass = classes.find(c => c.id === overrideClassId);
+                        if (!selClass || !selClass.timetable || selClass.timetable.length === 0) {
+                          return <option value="">No timetable slots found</option>;
+                        }
+                        return selClass.timetable.map(slot => (
+                          <option key={slot.id} value={slot.id}>
+                            {slot.subject_name} ({slot.start_time} - {slot.end_time}) on {slot.day_of_week}
+                          </option>
+                        ));
+                      })()}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Roster Column */}
+            <div className="lg:col-span-8">
+              <div className={`rounded-card p-6 transition-all duration-300 ${
+                darkMode ? 'bg-[#121212] border border-brand-emerald/20 text-white' : 'bg-white text-zinc-800 border border-zinc-100 shadow-card'
+              }`}>
+                <h3 className={`text-lg font-bold flex items-center gap-2 mb-4 border-b pb-4 ${darkMode ? 'text-white border-zinc-800' : 'text-zinc-950 border-zinc-100'}`}>
+                  <Users className="w-5 h-5 text-brand-emerald" />
+                  Roster Override Sheet
+                </h3>
+
+                {rosterLoading ? (
+                  <div className="py-12 text-center text-zinc-400">Loading student roster...</div>
+                ) : !overrideSlotId ? (
+                  <div className="py-12 text-center text-zinc-400">
+                    Please configure a timetable slot for the selected class to begin manual attendance overrides.
+                  </div>
+                ) : overrideRoster.length === 0 ? (
+                  <div className="py-12 text-center text-zinc-400">
+                    No students have joined this class division yet.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm border-collapse">
+                      <thead>
+                        <tr className={`border-b ${darkMode ? 'border-zinc-800 text-zinc-400' : 'border-zinc-100 text-zinc-500'} font-bold`}>
+                          <th className="pb-3">Name</th>
+                          <th className="pb-3 hidden sm:table-cell">Email</th>
+                          <th className="pb-3">Batch</th>
+                          <th className="pb-3">Status</th>
+                          <th className="pb-3 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {overrideRoster.map(s => (
+                          <tr key={s.id} className={`border-b ${darkMode ? 'border-zinc-800/50 hover:bg-zinc-900/30' : 'border-zinc-100/80 hover:bg-zinc-50/50'} transition-all`}>
+                            <td className="py-4 font-bold flex flex-col">
+                              <span>{s.name}</span>
+                              {!s.is_applicable && (
+                                <span className="text-[9px] text-amber-500 font-extrabold uppercase mt-0.5 tracking-wider">
+                                  Not matching batch
+                                </span>
+                              )}
+                            </td>
+                            <td className={`py-4 hidden sm:table-cell ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>{s.email}</td>
+                            <td className="py-4 font-bold">
+                              {s.batch ? (
+                                <span className={`text-[10px] px-2 py-0.5 border rounded-md ${
+                                  darkMode ? 'bg-zinc-800 border-zinc-700 text-zinc-300' : 'bg-zinc-100 border-zinc-200 text-zinc-600'
+                                }`}>{s.batch}</span>
+                              ) : 'N/A'}
+                            </td>
+                            <td className="py-4">
+                              {s.status === 'PRESENT' && (
+                                <span className="text-[10px] px-2.5 py-1 rounded-full font-bold bg-emerald-500/10 text-brand-emerald border border-brand-emerald/20 uppercase tracking-wide">
+                                  Present
+                                </span>
+                              )}
+                              {s.status === 'ABSENT' && (
+                                <span className="text-[10px] px-2.5 py-1 rounded-full font-bold bg-red-500/10 text-red-400 border border-red-500/20 uppercase tracking-wide">
+                                  Absent
+                                </span>
+                              )}
+                              {s.status === null && (
+                                <span className={`text-[10px] px-2.5 py-1 rounded-full font-bold border uppercase tracking-wide ${
+                                  darkMode ? 'bg-zinc-800 border-zinc-700 text-zinc-400' : 'bg-zinc-100 border-zinc-200 text-zinc-500'
+                                }`}>
+                                  Unmarked
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-4 text-right">
+                              <div className="flex justify-end gap-2">
+                                <button
+                                  onClick={() => handleOverrideAttendance(s.id, 'PRESENT')}
+                                  disabled={s.status === 'PRESENT'}
+                                  className={`p-2 rounded-xl transition-all ${
+                                    s.status === 'PRESENT'
+                                      ? 'opacity-30 cursor-not-allowed text-zinc-500 font-extrabold'
+                                      : darkMode
+                                      ? 'bg-emerald-500/10 text-brand-emerald hover:bg-emerald-500/20'
+                                      : 'bg-emerald-50 text-brand-emerald hover:bg-emerald-100'
+                                  }`}
+                                  title="Mark Present"
+                                >
+                                  <UserCheck className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => handleOverrideAttendance(s.id, 'ABSENT')}
+                                  disabled={s.status === 'ABSENT'}
+                                  className={`p-2 rounded-xl transition-all ${
+                                    s.status === 'ABSENT'
+                                      ? 'opacity-30 cursor-not-allowed text-zinc-500 font-extrabold'
+                                      : darkMode
+                                      ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20'
+                                      : 'bg-red-50 text-red-500 hover:bg-red-100'
+                                  }`}
+                                  title="Mark Absent"
+                                >
+                                  <UserX className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+
+        {activeAdminTab === 'holidays' && (
+          <>
+            {/* Add Holiday Form Column */}
+            <div className="lg:col-span-4 space-y-6">
+              <div className={`rounded-card p-6 border transition-all duration-300 ${
+                darkMode ? 'bg-[#121212] border border-brand-emerald/20 text-white' : 'bg-white text-zinc-800 shadow-card border border-zinc-100'
+              }`}>
+                <h3 className={`text-lg font-bold flex items-center gap-2 mb-4 ${darkMode ? 'text-white' : 'text-zinc-950'}`}>
+                  <Palmtree className="w-5 h-5 text-brand-emerald" />
+                  Declare Holiday
+                </h3>
+                
+                <form onSubmit={handleAddHoliday} className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mb-1.5">Holiday Date</label>
+                    <input
+                      type="date"
+                      value={holidayDate}
+                      onChange={(e) => setHolidayDate(e.target.value)}
+                      className={`w-full px-4 py-2.5 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-emerald/10 focus:border-brand-emerald transition-all ${
+                        darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-200 text-zinc-800'
+                      }`}
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mb-1.5">Holiday Name / Occasion</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Christmas / National Holiday"
+                      value={holidayName}
+                      onChange={(e) => setHolidayName(e.target.value)}
+                      className={`w-full px-4 py-2.5 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-emerald/10 focus:border-brand-emerald transition-all ${
+                        darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-200 text-zinc-800'
+                      }`}
+                      required
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={addHolidayLoading}
+                    className="w-full bg-brand-emerald hover:bg-brand-secondary text-white py-3 rounded-xl font-bold text-sm shadow-md transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    {addHolidayLoading ? 'Declaring...' : 'Declare Holiday'}
+                  </button>
+                </form>
+              </div>
+            </div>
+
+            {/* Holidays List Column */}
+            <div className="lg:col-span-8">
+              <div className={`rounded-card p-6 transition-all duration-300 ${
+                darkMode ? 'bg-[#121212] border border-brand-emerald/20 text-white' : 'bg-white text-zinc-800 border border-zinc-100 shadow-card'
+              }`}>
+                <h3 className={`text-lg font-bold flex items-center gap-2 mb-4 border-b pb-4 ${darkMode ? 'text-white border-zinc-800' : 'text-zinc-950 border-zinc-100'}`}>
+                  <Calendar className="w-5 h-5 text-brand-emerald" />
+                  Active Holiday Declarations
+                </h3>
+
+                {holidaysLoading ? (
+                  <div className="py-12 text-center text-zinc-400">Loading declared holidays...</div>
+                ) : holidays.length === 0 ? (
+                  <div className="py-12 text-center text-zinc-400">
+                    No holidays have been declared yet. Active check-in is enabled for all scheduled slots.
+                  </div>
+                ) : (
+                  <div className="space-y-3 max-h-[450px] overflow-y-auto pr-1 no-scrollbar">
+                    {holidays.map(h => (
+                      <div
+                        key={h.id}
+                        className={`flex items-center justify-between p-4.5 rounded-2xl border transition-all ${
+                          darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-200 text-zinc-800'
+                        }`}
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className={`p-2.5 rounded-xl border ${
+                            darkMode ? 'bg-zinc-950 border-zinc-800 text-amber-500' : 'bg-amber-50 border-amber-100 text-amber-600'
+                          }`}>
+                            <Palmtree className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <div className="font-extrabold text-sm">{h.name}</div>
+                            <div className={`text-xs mt-1 font-semibold ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                              Date: {new Date(h.date).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                            </div>
                           </div>
                         </div>
-
-                        {/* Delete Button */}
                         <button
-                          onClick={() => removeSlot(index)}
-                          className={`p-2.5 rounded-xl transition-colors self-end md:self-auto ${
-                            darkMode ? 'bg-red-950/20 text-red-400 hover:bg-red-950/40' : 'bg-red-50 hover:bg-red-100 text-red-500'
+                          onClick={() => handleDeleteHoliday(h.id)}
+                          className={`p-2.5 rounded-xl transition-all ${
+                            darkMode ? 'text-red-400 hover:bg-red-950/40' : 'text-red-500 hover:bg-red-50'
                           }`}
-                          title="Remove Slot"
+                          title="Delete Holiday"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -736,23 +1238,10 @@ export const AdminDashboard = () => {
                     ))}
                   </div>
                 )}
-
-                {/* Save Button */}
-                <div className={`border-t pt-5 mt-6 flex justify-end ${
-                  darkMode ? 'border-zinc-800' : 'border-zinc-100'
-                }`}>
-                  <button
-                    onClick={handleSaveTimetable}
-                    disabled={timetableLoading || slots.length === 0}
-                    className="w-full sm:w-auto bg-brand-emerald hover:bg-brand-secondary text-white py-3 px-8 rounded-xl font-bold text-sm shadow-md transition-all disabled:opacity-50"
-                  >
-                    {timetableLoading ? 'Saving...' : 'Save Timetable'}
-                  </button>
-                </div>
               </div>
-            )}
-          </div>
-        </div>
+            </div>
+          </>
+        )}
       </main>
 
       <Toast {...toast} onClose={() => setToast({ message: '', type: 'info' })} />

@@ -35,6 +35,17 @@ class CheckinRequest(BaseModel):
     lat: Optional[float] = None
     lng: Optional[float] = None
     date: Optional[str] = None  # YYYY-MM-DD
+    device_fingerprint: Optional[str] = None
 
 class UpdateBatchRequest(BaseModel):
     batch: Optional[str] = None
+
+class AttendanceOverrideRequest(BaseModel):
+    student_id: str
+    slot_id: str
+    date: str  # YYYY-MM-DD
+    status: str  # PRESENT or ABSENT
+
+class HolidayCreateRequest(BaseModel):
+    date: str  # YYYY-MM-DD
+    name: str

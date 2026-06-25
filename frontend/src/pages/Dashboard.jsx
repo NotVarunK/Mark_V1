@@ -9,8 +9,27 @@ import { Profile } from './Profile';
 import { 
   GraduationCap, MapPin, Calendar, Trophy, User, 
   ChevronRight, ChevronLeft, Award, AlertCircle, CheckCircle, 
-  MapPinOff, Clock, LayoutGrid, ClipboardList, Check, Sun, Moon 
+  MapPinOff, Clock, LayoutGrid, ClipboardList, Check, Sun, Moon, Palmtree 
 } from 'lucide-react';
+
+const getDeviceFingerprint = () => {
+  try {
+    const screen = window.screen;
+    const userAgent = navigator.userAgent;
+    const language = navigator.language;
+    const timezoneOffset = new Date().getTimezoneOffset();
+    const raw = `${userAgent}|${screen.width}x${screen.height}|${language}|${timezoneOffset}`;
+    let hash = 0;
+    for (let i = 0; i < raw.length; i++) {
+      const char = raw.charCodeAt(i);
+      hash = (hash << 5) - hash + char;
+      hash = hash & hash;
+    }
+    return `df-${Math.abs(hash)}`;
+  } catch (e) {
+    return 'df-unknown';
+  }
+};
 
 export const Dashboard = () => {
   const { user, joinClass, refreshUser, darkMode, toggleDarkMode } = useAuth();
@@ -24,6 +43,22 @@ export const Dashboard = () => {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [scheduleSubTab, setScheduleSubTab] = useState('calendar'); // 'calendar' | 'timetable'
+  const [holidays, setHolidays] = useState([]);
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  const todayHoliday = holidays.find(h => h.date === todayStr);
+
+  const fetchHolidays = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/attendance/holidays`, { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        setHolidays(data);
+      }
+    } catch (err) {
+      console.error("Error fetching holidays:", err);
+    }
+  };
 
   const isSameDay = (d1, d2) => {
     if (!d1 || !d2) return false;
@@ -63,8 +98,11 @@ export const Dashboard = () => {
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
   useEffect(() => {
-    if (user && user.class_id) {
-      fetchDashboard();
+    if (user) {
+      fetchHolidays();
+      if (user.class_id) {
+        fetchDashboard();
+      }
     }
   }, [user]);
 
@@ -130,7 +168,8 @@ export const Dashboard = () => {
             body: JSON.stringify({
               slotId,
               lat: latitude,
-              lng: longitude
+              lng: longitude,
+              device_fingerprint: getDeviceFingerprint()
             }),
             credentials: 'include'
           });
@@ -431,6 +470,17 @@ export const Dashboard = () => {
             {/* Today's Schedule Slot Card List */}
             <section className="space-y-3">
               <h3 className="text-sm font-extrabold uppercase tracking-wider text-white/80">Today's Lectures</h3>
+              {todayHoliday && (
+                <div className={`p-4.5 rounded-2xl border flex items-start gap-3 transition-colors bg-amber-500/10 border-amber-500/20 text-amber-500`}>
+                  <Palmtree className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider opacity-75">Holiday Declared</div>
+                    <div className="text-xs font-semibold mt-0.5 leading-relaxed">
+                      Today is a declared holiday: <span className="font-extrabold">{todayHoliday.name}</span>. Student check-ins are disabled.
+                    </div>
+                  </div>
+                </div>
+              )}
               {todaySlots.length === 0 ? (
                 <div className="bg-brand-glass border border-white/5 p-8 rounded-card text-center text-white/50">
                   <Clock className="w-10 h-10 mx-auto opacity-40 mb-3" />
@@ -459,15 +509,15 @@ export const Dashboard = () => {
 
                         <button
                           onClick={() => handleCheckin(slot.id)}
-                          disabled={checkinLoading !== null || status.label === 'COMPLETED'}
+                          disabled={checkinLoading !== null || status.label === 'COMPLETED' || !!todayHoliday}
                           className={`w-full py-3 rounded-2xl font-bold text-sm shadow-sm transition-all flex items-center justify-center gap-2 ${
-                            status.label === 'COMPLETED'
+                            status.label === 'COMPLETED' || !!todayHoliday
                               ? darkMode ? 'bg-zinc-900 text-zinc-600 border border-zinc-800/40 cursor-not-allowed shadow-none' : 'bg-zinc-100 text-zinc-400 cursor-not-allowed shadow-none'
                               : 'bg-brand-emerald hover:bg-brand-secondary text-white hover:shadow-lg'
                           }`}
                         >
                           <MapPin className="w-4 h-4" />
-                          {checkinLoading === slot.id ? 'Checking Coordinates...' : status.label === 'COMPLETED' ? 'Checked In' : 'Check In'}
+                          {checkinLoading === slot.id ? 'Checking Coordinates...' : status.label === 'COMPLETED' ? 'Checked In' : todayHoliday ? `Holiday (${todayHoliday.name})` : 'Check In'}
                         </button>
                       </div>
                     );
@@ -774,12 +824,17 @@ export const Dashboard = () => {
                       const dayOfWeekName = getDays()[day.getDay()];
                       const hasScheduledLectures = user?.class?.timetable?.some(s => s.day_of_week === dayOfWeekName);
 
+                      // Check if day is holiday
+                      const dayFormatStr = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+                      const dayHoliday = holidays.find(h => h.date === dayFormatStr);
+                      const isHoliday = !!dayHoliday;
+
                       // Check logs on this date
                       const dayLogs = dashboardData?.logs?.filter(log => isSameDay(new Date(log.date), day)) || [];
                       const attendedCount = dayLogs.length;
 
-                      // Check missed status (past date with schedule but zero attendance logs)
-                      const isMissed = isPastDay(day) && hasScheduledLectures && attendedCount === 0;
+                      // Check missed status (past date with schedule but zero attendance logs, unless it was a holiday)
+                      const isMissed = isPastDay(day) && hasScheduledLectures && attendedCount === 0 && !isHoliday;
 
                       return (
                         <button
@@ -792,6 +847,10 @@ export const Dashboard = () => {
                               ? darkMode
                                 ? 'bg-brand-emerald/10 border-brand-emerald text-brand-emerald font-extrabold'
                                 : 'bg-emerald-50 border-brand-emerald text-brand-emerald font-extrabold'
+                              : isHoliday
+                              ? darkMode
+                                ? 'bg-amber-950/20 border border-amber-500/20 text-amber-500 hover:bg-amber-950/40'
+                                : 'bg-amber-50 border border-amber-100 text-amber-600 hover:bg-amber-100'
                               : darkMode
                               ? 'bg-zinc-900 border-transparent hover:bg-zinc-800 text-zinc-300'
                               : 'bg-zinc-50 border-transparent hover:bg-zinc-100 text-zinc-800'
@@ -800,7 +859,11 @@ export const Dashboard = () => {
                           <span className="text-xs">{day.getDate()}</span>
 
                           {/* Dots */}
-                          {hasScheduledLectures && (
+                          {isHoliday ? (
+                            <span className="flex gap-0.5 justify-center mb-0.5">
+                              <span className={`w-1 h-1 rounded-full ${isSelected ? 'bg-white' : 'bg-amber-500'}`} />
+                            </span>
+                          ) : hasScheduledLectures && (
                             <span className="flex gap-0.5 justify-center mb-0.5">
                               {attendedCount > 0 && (
                                 <span className={`w-1 h-1 rounded-full ${isSelected ? 'bg-white' : 'bg-brand-emerald'}`} />
@@ -832,6 +895,19 @@ export const Dashboard = () => {
                     </h3>
 
                     {(() => {
+                      const selectedDateStr = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`;
+                      const selectedDayHoliday = holidays.find(h => h.date === selectedDateStr);
+
+                      if (selectedDayHoliday) {
+                        return (
+                          <div className="py-12 text-center text-amber-500">
+                            <Palmtree className="w-10 h-10 mx-auto opacity-80 mb-2" />
+                            <p className="text-sm font-bold">{selectedDayHoliday.name}</p>
+                            <p className="text-[10px] text-zinc-400 mt-1 uppercase font-semibold tracking-wider">Official Holiday</p>
+                          </div>
+                        );
+                      }
+
                       const selectedDayName = getDays()[selectedDate.getDay()];
                       const daySlots = user?.class?.timetable?.filter(s => 
                         s.day_of_week === selectedDayName && isSlotForStudentBatch(s.subject_name, user.batch)
