@@ -9,6 +9,12 @@ export const AdminDashboard = () => {
   const [selectedClass, setSelectedClass] = useState(null);
   const [toast, setToast] = useState({ message: '', type: 'info' });
 
+  // Mobile View Sub-Tab States
+  const [setupSubTab, setSetupSubTab] = useState('classes'); // 'classes' | 'roster' | 'timetable'
+  const [overridesSubTab, setOverridesSubTab] = useState('parameters'); // 'parameters' | 'roster'
+  const [exceptionsSubTab, setExceptionsSubTab] = useState('holidays'); // 'holidays' | 'adjustments'
+  const [analyticsSubTab, setAnalyticsSubTab] = useState('summary'); // 'summary' | 'subjects' | 'standings'
+
   // Admin Change Password Modal State
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [newPassword, setNewPassword] = useState('');
@@ -722,15 +728,136 @@ export const AdminDashboard = () => {
         </button>
       </div>
 
-      <main className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 px-4 md:px-0">
+      {/* Mobile Sub-Navigation Pill Bar */}
+      {activeAdminTab === 'setup' && (
+        <div className="flex lg:hidden gap-2 mb-6 max-w-7xl mx-auto w-full px-4 overflow-x-auto no-scrollbar pb-1">
+          <button
+            onClick={() => setSetupSubTab('classes')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+              setupSubTab === 'classes'
+                ? 'bg-brand-emerald text-white shadow-md'
+                : 'bg-brand-glass text-white/70 border border-white/5'
+            }`}
+          >
+            Class List
+          </button>
+          <button
+            onClick={() => setSetupSubTab('roster')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+              setupSubTab === 'roster'
+                ? 'bg-brand-emerald text-white shadow-md'
+                : 'bg-brand-glass text-white/70 border border-white/5'
+            }`}
+          >
+            Student Roster
+          </button>
+          <button
+            onClick={() => setSetupSubTab('timetable')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+              setupSubTab === 'timetable'
+                ? 'bg-brand-emerald text-white shadow-md'
+                : 'bg-brand-glass text-white/70 border border-white/5'
+            }`}
+          >
+            Timetable
+          </button>
+        </div>
+      )}
+
+      {activeAdminTab === 'overrides' && (
+        <div className="flex lg:hidden gap-2 mb-6 max-w-7xl mx-auto w-full px-4 overflow-x-auto no-scrollbar pb-1">
+          <button
+            onClick={() => setOverridesSubTab('parameters')}
+            className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all text-center whitespace-nowrap ${
+              overridesSubTab === 'parameters'
+                ? 'bg-brand-emerald text-white shadow-md'
+                : 'bg-brand-glass text-white/70 border border-white/5'
+            }`}
+          >
+            Select Session
+          </button>
+          <button
+            onClick={() => setOverridesSubTab('roster')}
+            className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all text-center whitespace-nowrap ${
+              overridesSubTab === 'roster'
+                ? 'bg-brand-emerald text-white shadow-md'
+                : 'bg-brand-glass text-white/70 border border-white/5'
+            }`}
+          >
+            Overrides Sheet
+          </button>
+        </div>
+      )}
+
+      {activeAdminTab === 'holidays' && (
+        <div className="flex lg:hidden gap-2 mb-6 max-w-7xl mx-auto w-full px-4 overflow-x-auto no-scrollbar pb-1">
+          <button
+            onClick={() => setExceptionsSubTab('holidays')}
+            className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all text-center whitespace-nowrap ${
+              exceptionsSubTab === 'holidays'
+                ? 'bg-brand-emerald text-white shadow-md'
+                : 'bg-brand-glass text-white/70 border border-white/5'
+            }`}
+          >
+            Global Holidays
+          </button>
+          <button
+            onClick={() => setExceptionsSubTab('adjustments')}
+            className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all text-center whitespace-nowrap ${
+              exceptionsSubTab === 'adjustments'
+                ? 'bg-brand-emerald text-white shadow-md'
+                : 'bg-brand-glass text-white/70 border border-white/5'
+            }`}
+          >
+            Class Adjustments
+          </button>
+        </div>
+      )}
+
+      {activeAdminTab === 'analytics' && (
+        <div className="flex lg:hidden gap-2 mb-6 max-w-7xl mx-auto w-full px-4 overflow-x-auto no-scrollbar pb-1">
+          <button
+            onClick={() => setAnalyticsSubTab('summary')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+              analyticsSubTab === 'summary'
+                ? 'bg-brand-emerald text-white shadow-md'
+                : 'bg-brand-glass text-white/70 border border-white/5'
+            }`}
+          >
+            Summary & Alerts
+          </button>
+          <button
+            onClick={() => setAnalyticsSubTab('subjects')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+              analyticsSubTab === 'subjects'
+                ? 'bg-brand-emerald text-white shadow-md'
+                : 'bg-brand-glass text-white/70 border border-white/5'
+            }`}
+          >
+            Subject Stats
+          </button>
+          <button
+            onClick={() => setAnalyticsSubTab('standings')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+              analyticsSubTab === 'standings'
+                ? 'bg-brand-emerald text-white shadow-md'
+                : 'bg-brand-glass text-white/70 border border-white/5'
+            }`}
+          >
+            Full Standings
+          </button>
+        </div>
+      )}
+
+      <main className="max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-8 px-4 md:px-0">
         {activeAdminTab === 'setup' && (
           <>
             {/* Left column: Class Creator and Selector */}
-            <div className="lg:col-span-4 space-y-8">
+            <div className={`lg:col-span-4 space-y-8 ${setupSubTab !== 'classes' && setupSubTab !== 'roster' ? 'hidden lg:block' : ''}`}>
               {/* Class Creator / Editor Card */}
               <div className={`rounded-card p-6 transition-all duration-300 ${
                 darkMode ? 'bg-[#121212] border border-brand-emerald/20 text-white' : 'bg-white text-zinc-800 shadow-card border border-zinc-100'
-              }`}>
+              } ${setupSubTab !== 'classes' ? 'hidden lg:block' : ''}`}>
                 {editingClass ? (
                   <>
                     <div className="flex items-center justify-between mb-4">
@@ -894,7 +1021,7 @@ export const AdminDashboard = () => {
               {/* Class Selector List */}
               <div className={`rounded-card border p-6 transition-all duration-300 ${
                 darkMode ? 'bg-[#121212] border-brand-emerald/20' : 'bg-brand-glass border-white/10'
-              }`}>
+              } ${setupSubTab !== 'classes' ? 'hidden lg:block' : ''}`}>
                 <h3 className="text-lg font-bold flex items-center gap-2 mb-4">
                   <Users className="w-5 h-5 text-brand-emerald" />
                   Active Classes ({classes.length})
@@ -902,7 +1029,7 @@ export const AdminDashboard = () => {
                 {classes.length === 0 ? (
                   <p className="text-sm text-white/50">No classes created yet. Use the form above to add your first academic stream.</p>
                 ) : (
-                  <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1 no-scrollbar">
+                  <div className="space-y-3 lg:max-h-[300px] lg:overflow-y-auto pr-1 no-scrollbar">
                     {classes.map(cls => (
                       <div
                         key={cls.id}
@@ -946,7 +1073,7 @@ export const AdminDashboard = () => {
               {selectedClass && (
                 <div className={`rounded-card p-6 border transition-all duration-300 ${
                   darkMode ? 'bg-[#121212] border-brand-emerald/20 text-white' : 'bg-white text-zinc-800 shadow-card border-zinc-100'
-                }`}>
+                } ${setupSubTab !== 'roster' ? 'hidden lg:block' : ''}`}>
                   <div className="flex items-center justify-between mb-4">
                     <h3 className={`text-lg font-bold flex items-center gap-2 ${darkMode ? 'text-white' : 'text-zinc-950'}`}>
                       <Users className="w-5 h-5 text-brand-emerald" />
@@ -971,7 +1098,7 @@ export const AdminDashboard = () => {
                       No students have joined this class code yet. Share the code <span className="font-extrabold text-brand-emerald">{selectedClass.class_code}</span> with your students.
                     </p>
                   ) : (
-                    <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1 no-scrollbar">
+                    <div className="space-y-3 lg:max-h-[300px] lg:overflow-y-auto pr-1 no-scrollbar">
                       {selectedClass.students.map(student => (
                         <div
                           key={student.id}
@@ -1001,7 +1128,7 @@ export const AdminDashboard = () => {
             </div>
 
             {/* Right column: Timetable Builder */}
-            <div className="lg:col-span-8">
+            <div className={`lg:col-span-8 ${setupSubTab !== 'timetable' ? 'hidden lg:block' : ''}`}>
               <div className={`rounded-card p-6 transition-all duration-300 ${
                 darkMode ? 'bg-[#121212] border border-brand-emerald/20 text-white' : 'bg-white text-zinc-800 border border-zinc-100 shadow-card'
               }`}>
@@ -1058,7 +1185,7 @@ export const AdminDashboard = () => {
                         </button>
                       </div>
                     ) : (
-                      <div className="space-y-3 max-h-[450px] overflow-y-auto pr-1 no-scrollbar">
+                      <div className="space-y-3 lg:max-h-[450px] lg:overflow-y-auto pr-1 no-scrollbar">
                         {slots.map((slot, index) => (
                           <div 
                             key={index} 
@@ -1156,7 +1283,7 @@ export const AdminDashboard = () => {
         {activeAdminTab === 'overrides' && (
           <>
             {/* Selector Column */}
-            <div className="lg:col-span-4 space-y-6">
+            <div className={`lg:col-span-4 space-y-6 ${overridesSubTab !== 'parameters' ? 'hidden lg:block' : ''}`}>
               <div className={`rounded-card p-6 border transition-all duration-300 ${
                 darkMode ? 'bg-[#121212] border border-brand-emerald/20 text-white' : 'bg-white text-zinc-800 shadow-card border border-zinc-100'
               }`}>
@@ -1222,7 +1349,7 @@ export const AdminDashboard = () => {
             </div>
 
             {/* Roster Column */}
-            <div className="lg:col-span-8">
+            <div className={`lg:col-span-8 ${overridesSubTab !== 'roster' ? 'hidden lg:block' : ''}`}>
               <div className={`rounded-card p-6 transition-all duration-300 ${
                 darkMode ? 'bg-[#121212] border border-brand-emerald/20 text-white' : 'bg-white text-zinc-800 border border-zinc-100 shadow-card'
               }`}>
@@ -1337,7 +1464,7 @@ export const AdminDashboard = () => {
         {activeAdminTab === 'holidays' && (
           <>
             {/* Left Column: Global Holiday Declarations */}
-            <div className="lg:col-span-6 space-y-6">
+            <div className={`lg:col-span-6 space-y-6 ${exceptionsSubTab !== 'holidays' ? 'hidden lg:block' : ''}`}>
               {/* Add Holiday Form */}
               <div className={`rounded-card p-6 border transition-all duration-300 ${
                 darkMode ? 'bg-[#121212] border border-brand-emerald/20 text-white' : 'bg-white text-zinc-800 shadow-card border border-zinc-100'
@@ -1402,7 +1529,7 @@ export const AdminDashboard = () => {
                     No holidays have been declared yet. Active check-in is enabled for all scheduled slots.
                   </div>
                 ) : (
-                  <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1 no-scrollbar">
+                  <div className="space-y-3 lg:max-h-[350px] lg:overflow-y-auto pr-1 no-scrollbar">
                     {holidays.map(h => (
                       <div
                         key={h.id}
@@ -1440,7 +1567,7 @@ export const AdminDashboard = () => {
             </div>
 
             {/* Right Column: Temporary Schedule Adjustments */}
-            <div className="lg:col-span-6 space-y-6">
+            <div className={`lg:col-span-6 space-y-6 ${exceptionsSubTab !== 'adjustments' ? 'hidden lg:block' : ''}`}>
               {/* Add Adjustment Form */}
               <div className={`rounded-card p-6 border transition-all duration-300 ${
                 darkMode ? 'bg-[#121212] border border-brand-emerald/20 text-white' : 'bg-white text-zinc-800 shadow-card border border-zinc-100'
@@ -1563,7 +1690,7 @@ export const AdminDashboard = () => {
                     No active temporary adjustments declared for this class.
                   </div>
                 ) : (
-                  <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1 no-scrollbar">
+                  <div className="space-y-3 lg:max-h-[350px] lg:overflow-y-auto pr-1 no-scrollbar">
                     {adjustments.map(adj => (
                       <div
                         key={adj.id}
@@ -1616,7 +1743,7 @@ export const AdminDashboard = () => {
         {activeAdminTab === 'analytics' && (
           <>
             {/* Class Selector Dropdown */}
-            <div className="lg:col-span-4 space-y-6">
+            <div className={`lg:col-span-4 space-y-6 ${analyticsSubTab !== 'summary' ? 'hidden lg:block' : ''}`}>
               <div className={`rounded-card p-6 border transition-all duration-300 ${
                 darkMode ? 'bg-[#121212] border border-brand-emerald/20 text-white' : 'bg-white text-zinc-800 shadow-card border border-zinc-100'
               }`}>
@@ -1664,7 +1791,7 @@ export const AdminDashboard = () => {
               ) : (
                 <>
                   {/* Summary Metric Cards */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className={`grid grid-cols-1 sm:grid-cols-3 gap-4 ${analyticsSubTab !== 'summary' ? 'hidden sm:grid' : ''}`}>
                     <div className={`rounded-card p-5 border transition-all ${
                       darkMode ? 'bg-[#121212] border-brand-emerald/20 text-white' : 'bg-white border-zinc-100 shadow-card text-zinc-800'
                     }`}>
@@ -1704,7 +1831,7 @@ export const AdminDashboard = () => {
                   {/* Low Attendance Alerts / At-Risk */}
                   <div className={`rounded-card p-6 border transition-all ${
                     darkMode ? 'bg-[#121212] border-brand-emerald/20 text-white' : 'bg-white border-zinc-100 shadow-card text-zinc-800'
-                  }`}>
+                  } ${analyticsSubTab !== 'summary' ? 'hidden lg:block' : ''}`}>
                     <h3 className="text-base font-extrabold flex items-center gap-2 mb-4">
                       <AlertTriangle className="w-5 h-5 text-red-500" />
                       Attendance Alerts (Below 75%)
@@ -1718,7 +1845,7 @@ export const AdminDashboard = () => {
                         <span className="text-xs font-bold">Class health is optimal! Every student attendance average is currently above the 75% bar.</span>
                       </div>
                     ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[220px] overflow-y-auto pr-1 no-scrollbar">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 lg:max-h-[220px] lg:overflow-y-auto pr-1 no-scrollbar">
                         {analyticsData.at_risk.map(s => (
                           <div 
                             key={s.id} 
@@ -1744,7 +1871,7 @@ export const AdminDashboard = () => {
                   {/* Subject Breakdown */}
                   <div className={`rounded-card p-6 border transition-all ${
                     darkMode ? 'bg-[#121212] border-brand-emerald/20 text-white' : 'bg-white border-zinc-100 shadow-card text-zinc-800'
-                  }`}>
+                  } ${analyticsSubTab !== 'subjects' ? 'hidden lg:block' : ''}`}>
                     <h3 className="text-base font-extrabold flex items-center gap-2 mb-4">
                       <ClipboardList className="w-5 h-5 text-brand-emerald" />
                       Subject Average Attendance
@@ -1781,7 +1908,7 @@ export const AdminDashboard = () => {
                   {/* Comprehensive Standings Table */}
                   <div className={`rounded-card p-6 border transition-all ${
                     darkMode ? 'bg-[#121212] border-brand-emerald/20 text-white' : 'bg-white border-zinc-100 shadow-card text-zinc-800'
-                  }`}>
+                  } ${analyticsSubTab !== 'standings' ? 'hidden lg:block' : ''}`}>
                     <h3 className="text-base font-extrabold flex items-center gap-2 mb-4">
                       <Users className="w-5 h-5 text-brand-emerald" />
                       Complete Student Standings
