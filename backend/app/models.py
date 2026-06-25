@@ -1,6 +1,6 @@
 import enum
 import uuid
-from sqlalchemy import Column, String, DateTime, Enum, ForeignKey, Date, UniqueConstraint
+from sqlalchemy import Column, String, DateTime, Enum, ForeignKey, Date, UniqueConstraint, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -85,3 +85,22 @@ class Holiday(Base):
     name = Column(String, nullable=False)
     createdAt = Column(DateTime(timezone=True), server_default=func.now())
     updatedAt = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
+
+class ScheduleAdjustment(Base):
+    __tablename__ = "ScheduleAdjustment"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    class_id = Column(String, ForeignKey("Class.id", ondelete="CASCADE"), nullable=False)
+    slot_id = Column(String, ForeignKey("TimetableSlot.id", ondelete="CASCADE"), nullable=False)
+    date = Column(Date, nullable=False)
+    is_cancelled = Column(Boolean, default=False, nullable=False)
+    replaced_subject = Column(String, nullable=True)
+    createdAt = Column(DateTime(timezone=True), server_default=func.now())
+    updatedAt = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
+
+    class_ = relationship("Class")
+    slot = relationship("TimetableSlot")
+
+    __table_args__ = (
+        UniqueConstraint("slot_id", "date", name="ScheduleAdjustment_slot_id_date_key"),
+    )

@@ -9,10 +9,10 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import Class, TimetableSlot, User, Role, AttendanceLog, AttendanceStatus, Holiday
-from app.schemas import ClassCreateRequest, TimetableSaveRequest, AttendanceOverrideRequest, HolidayCreateRequest
+from app.models import Class, TimetableSlot, User, Role, AttendanceLog, AttendanceStatus, Holiday, ScheduleAdjustment
+from app.schemas import ClassCreateRequest, TimetableSaveRequest, AttendanceOverrideRequest, HolidayCreateRequest, AdjustmentCreateRequest
 from app.auth_utils import require_role
-from app.routes.attendance import TERM_START_DATE, count_conducted_lectures, is_slot_for_student_batch
+from app.routes.attendance import TERM_START_DATE, count_conducted_lectures, is_slot_for_student_batch, get_student_attendance_summary
 
 router = APIRouter(prefix="/admin", tags=["Admin Control Panel"])
 
@@ -198,17 +198,35 @@ def save_timetable(class_id: str, payload: TimetableSaveRequest, db: Session = D
             raise HTTPException(status_code=400, detail="Times must be in valid HH:MM format.")
 
     try:
-        # Reset and rebuild the timetable in transaction
-        db.query(TimetableSlot).filter(TimetableSlot.class_id == class_id).delete()
-        for slot in payload.slots:
-            new_slot = TimetableSlot(
-                class_id=class_id,
-                day_of_week=slot.day_of_week,
-                subject_name=slot.subject_name,
-                start_time=slot.start_time,
-                end_time=slot.end_time
-            )
-            db.add(new_slot)
+        # Load existing slots
+        existing_slots = db.query(TimetableSlot).filter(TimetableSlot.class_id == class_id).all()
+        existing_map = {s.id: s for s in existing_slots}
+        sent_ids = set()
+
+        for slot_schema in payload.slots:
+            if slot_schema.id and slot_schema.id in existing_map:
+                # Update existing slot
+                slot_obj = existing_map[slot_schema.id]
+                slot_obj.day_of_week = slot_schema.day_of_week
+                slot_obj.subject_name = slot_schema.subject_name
+                slot_obj.start_time = slot_schema.start_time
+                slot_obj.end_time = slot_schema.end_time
+                sent_ids.add(slot_schema.id)
+            else:
+                # Create new slot
+                new_slot = TimetableSlot(
+                    class_id=class_id,
+                    day_of_week=slot_schema.day_of_week,
+                    subject_name=slot_schema.subject_name,
+                    start_time=slot_schema.start_time,
+                    end_time=slot_schema.end_time
+                )
+                db.add(new_slot)
+        
+        # Delete slots that were not sent in the payload
+        for old_id, old_slot in existing_map.items():
+            if old_id not in sent_ids:
+                db.delete(old_slot)
         
         db.commit()
 
@@ -265,26 +283,7 @@ def export_class_attendance(class_id: str, db: Session = Depends(get_db)):
 
     for student in students:
         student_slots = [s for s in slots if is_slot_for_student_batch(s.subject_name, student.batch)]
-        
-        # Group slot data by subject name to compute counts
-        subject_stats = {}
-        for slot in student_slots:
-            conducted = count_conducted_lectures(db, TERM_START_DATE, today, slot.day_of_week)
-            attended = db.query(AttendanceLog).filter(
-                AttendanceLog.student_id == student.id,
-                AttendanceLog.slot_id == slot.id,
-                AttendanceLog.status == AttendanceStatus.PRESENT
-            ).count()
-
-            if conducted < attended:
-                conducted = attended
-
-            subj_name = slot.subject_name
-            if subj_name not in subject_stats:
-                subject_stats[subj_name] = {"conducted": 0, "attended": 0}
-                
-            subject_stats[subj_name]["conducted"] += conducted
-            subject_stats[subj_name]["attended"] += attended
+        subject_stats = get_student_attendance_summary(db, student.id, class_id, student_slots, today)
 
         # If student has no timetable slots at all
         if not subject_stats:
@@ -499,31 +498,18 @@ def get_class_analytics(class_id: str, db: Session = Depends(get_db)):
 
     for student in students:
         student_slots = [s for s in slots if is_slot_for_student_batch(s.subject_name, student.batch)]
+        summary = get_student_attendance_summary(db, student.id, class_id, student_slots, today)
         
-        student_conducted = 0
-        student_attended = 0
+        student_conducted = sum(x["conducted"] for x in summary.values())
+        student_attended = sum(x["attended"] for x in summary.values())
         
-        for slot in student_slots:
-            conducted = count_conducted_lectures(db, TERM_START_DATE, today, slot.day_of_week)
-            attended = db.query(AttendanceLog).filter(
-                AttendanceLog.student_id == student.id,
-                AttendanceLog.slot_id == slot.id,
-                AttendanceLog.status == AttendanceStatus.PRESENT
-            ).count()
+        # Aggregate subject performance class-wide
+        for sub_name, stats in summary.items():
+            if sub_name not in subject_aggregate:
+                subject_aggregate[sub_name] = {"conducted": 0, "attended": 0}
+            subject_aggregate[sub_name]["conducted"] += stats["conducted"]
+            subject_aggregate[sub_name]["attended"] += stats["attended"]
 
-            if conducted < attended:
-                conducted = attended
-
-            student_conducted += conducted
-            student_attended += attended
-            
-            # Subject aggregated stats
-            subj_name = slot.subject_name
-            if subj_name not in subject_aggregate:
-                subject_aggregate[subj_name] = {"conducted": 0, "attended": 0}
-            subject_aggregate[subj_name]["conducted"] += conducted
-            subject_aggregate[subj_name]["attended"] += attended
-            
         pct = round((student_attended / student_conducted * 100), 1) if student_conducted > 0 else 0.0
         
         student_stats.append({
@@ -565,3 +551,96 @@ def get_class_analytics(class_id: str, db: Session = Depends(get_db)):
         "subjects_stats": subjects_stats,
         "at_risk": at_risk
     }
+
+@router.get("/classes/{class_id}/adjustments")
+def get_schedule_adjustments(class_id: str, db: Session = Depends(get_db)):
+    try:
+        adjustments = db.query(ScheduleAdjustment).filter(ScheduleAdjustment.class_id == class_id).all()
+        return [
+            {
+                "id": a.id,
+                "class_id": a.class_id,
+                "slot_id": a.slot_id,
+                "date": a.date.isoformat(),
+                "is_cancelled": a.is_cancelled,
+                "replaced_subject": a.replaced_subject,
+                "slot": {
+                    "subject_name": a.slot.subject_name,
+                    "day_of_week": a.slot.day_of_week,
+                    "start_time": a.slot.start_time,
+                    "end_time": a.slot.end_time
+                } if a.slot else None
+            } for a in adjustments
+        ]
+    except Exception as e:
+        print("Get schedule adjustments error:", e)
+        raise HTTPException(status_code=500, detail="Failed to retrieve schedule adjustments.")
+
+@router.post("/adjustments", status_code=status.HTTP_201_CREATED)
+def create_schedule_adjustment(payload: AdjustmentCreateRequest, db: Session = Depends(get_db)):
+    try:
+        target_date = datetime.strptime(payload.date.strip(), "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Expected YYYY-MM-DD.")
+
+    slot = db.query(TimetableSlot).filter(TimetableSlot.id == payload.slot_id).first()
+    if not slot:
+        raise HTTPException(status_code=404, detail="Timetable slot not found.")
+
+    # Check if weekday matches
+    days_map = {
+        "Sunday": 6, "Monday": 0, "Tuesday": 1, "Wednesday": 2,
+        "Thursday": 3, "Friday": 4, "Saturday": 5
+    }
+    target_weekday = days_map.get(slot.day_of_week)
+    if target_weekday is not None and target_date.weekday() != target_weekday:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Adjustment date {target_date} ({target_date.strftime('%A')}) does not match the slot's scheduled day: {slot.day_of_week}."
+        )
+
+    # Check if already exists
+    existing = db.query(ScheduleAdjustment).filter(
+        ScheduleAdjustment.slot_id == payload.slot_id,
+        ScheduleAdjustment.date == target_date
+    ).first()
+
+    if existing:
+        existing.is_cancelled = payload.is_cancelled
+        existing.replaced_subject = payload.replaced_subject.strip() if payload.replaced_subject else None
+        db.commit()
+        db.refresh(existing)
+        return {"message": "Schedule adjustment updated successfully.", "id": existing.id}
+
+    new_adj = ScheduleAdjustment(
+        class_id=payload.class_id,
+        slot_id=payload.slot_id,
+        date=target_date,
+        is_cancelled=payload.is_cancelled,
+        replaced_subject=payload.replaced_subject.strip() if payload.replaced_subject else None
+    )
+
+    try:
+        db.add(new_adj)
+        db.commit()
+        db.refresh(new_adj)
+        return {"message": "Schedule adjustment created successfully.", "id": new_adj.id}
+    except Exception as e:
+        db.rollback()
+        print("Create schedule adjustment error:", e)
+        raise HTTPException(status_code=500, detail="Failed to create schedule adjustment.")
+
+@router.delete("/adjustments/{adjustment_id}")
+def delete_schedule_adjustment(adjustment_id: str, db: Session = Depends(get_db)):
+    adj = db.query(ScheduleAdjustment).filter(ScheduleAdjustment.id == adjustment_id).first()
+    if not adj:
+        raise HTTPException(status_code=404, detail="Schedule adjustment not found.")
+
+    try:
+        db.delete(adj)
+        db.commit()
+        return {"message": "Schedule adjustment deleted successfully."}
+    except Exception as e:
+        db.rollback()
+        print("Delete schedule adjustment error:", e)
+        raise HTTPException(status_code=500, detail="Failed to delete schedule adjustment.")

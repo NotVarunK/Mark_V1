@@ -19,6 +19,7 @@ class ClassCreateRequest(BaseModel):
     division: str
 
 class TimetableSlotSchema(BaseModel):
+    id: Optional[str] = None
     day_of_week: str
     subject_name: str
     start_time: str
@@ -49,3 +50,10 @@ class AttendanceOverrideRequest(BaseModel):
 class HolidayCreateRequest(BaseModel):
     date: str  # YYYY-MM-DD
     name: str
+
+class AdjustmentCreateRequest(BaseModel):
+    class_id: str
+    slot_id: str
+    date: str  # YYYY-MM-DD
+    is_cancelled: bool = False
+    replaced_subject: Optional[str] = None

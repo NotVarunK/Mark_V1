@@ -44,6 +44,16 @@ export const AdminDashboard = () => {
   const [holidaysLoading, setHolidaysLoading] = useState(false);
   const [addHolidayLoading, setAddHolidayLoading] = useState(false);
 
+  // Temporary Adjustments State
+  const [adjustments, setAdjustments] = useState([]);
+  const [adjustmentsLoading, setAdjustmentsLoading] = useState(false);
+  const [adjustmentClassId, setAdjustmentClassId] = useState('');
+  const [adjustmentDate, setAdjustmentDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [adjustmentSlotId, setAdjustmentSlotId] = useState('');
+  const [adjustmentType, setAdjustmentType] = useState('cancel'); // 'cancel' | 'swap'
+  const [adjustmentReplacedSubject, setAdjustmentReplacedSubject] = useState('');
+  const [addAdjustmentLoading, setAddAdjustmentLoading] = useState(false);
+
   // Roster Analytics State
   const [analyticsClassId, setAnalyticsClassId] = useState('');
   const [analyticsData, setAnalyticsData] = useState(null);
@@ -73,6 +83,21 @@ export const AdminDashboard = () => {
       setOverrideRoster([]);
     }
   }, [overrideClassId, overrideDate, overrideSlotId]);
+
+  useEffect(() => {
+    const selected = classes.find(c => c.id === adjustmentClassId);
+    if (selected && selected.timetable && selected.timetable.length > 0) {
+      setAdjustmentSlotId(selected.timetable[0].id);
+    } else {
+      setAdjustmentSlotId('');
+    }
+  }, [adjustmentClassId, classes]);
+
+  useEffect(() => {
+    if (activeAdminTab === 'holidays' && adjustmentClassId) {
+      fetchAdjustments(adjustmentClassId);
+    }
+  }, [activeAdminTab, adjustmentClassId]);
 
   useEffect(() => {
     if (activeAdminTab === 'analytics' && analyticsClassId) {
@@ -117,6 +142,7 @@ export const AdminDashboard = () => {
           }
           setOverrideClassId(prev => prev || data[0].id);
           setAnalyticsClassId(prev => prev || data[0].id);
+          setAdjustmentClassId(prev => prev || data[0].id);
         } else if (selectedClass) {
           // Update selected class with fresh data
           const updated = data.find(c => c.id === selectedClass.id);
@@ -197,6 +223,86 @@ export const AdminDashboard = () => {
       }
     } catch (err) {
       showToast('Server error deleting holiday.', 'error');
+    }
+  };
+
+  const fetchAdjustments = async (classId) => {
+    if (!classId) return;
+    setAdjustmentsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/admin/classes/${classId}/adjustments`, { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        setAdjustments(data);
+      } else {
+        showToast('Failed to load schedule adjustments.', 'error');
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Error loading schedule adjustments.', 'error');
+    } finally {
+      setAdjustmentsLoading(false);
+    }
+  };
+
+  const handleAddAdjustment = async (e) => {
+    e.preventDefault();
+    if (!adjustmentClassId || !adjustmentSlotId || !adjustmentDate) {
+      showToast('Please select a class, slot, and date.', 'warning');
+      return;
+    }
+    if (adjustmentType === 'swap' && !adjustmentReplacedSubject.trim()) {
+      showToast('Please specify a replacement subject.', 'warning');
+      return;
+    }
+    setAddAdjustmentLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/admin/adjustments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          class_id: adjustmentClassId,
+          slot_id: adjustmentSlotId,
+          date: adjustmentDate,
+          is_cancelled: adjustmentType === 'cancel',
+          replaced_subject: adjustmentType === 'swap' ? adjustmentReplacedSubject.trim() : null
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(data.message || 'Schedule adjustment applied successfully!', 'success');
+        setAdjustmentReplacedSubject('');
+        fetchAdjustments(adjustmentClassId);
+      } else {
+        showToast(data.detail || data.error || 'Failed to apply schedule adjustment.', 'error');
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Server error applying adjustment.', 'error');
+    } finally {
+      setAddAdjustmentLoading(false);
+    }
+  };
+
+  const handleDeleteAdjustment = async (adjustmentId) => {
+    const confirmed = window.confirm('Are you sure you want to revert this schedule adjustment?');
+    if (!confirmed) return;
+    try {
+      const res = await fetch(`${API_BASE}/admin/adjustments/${adjustmentId}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast('Schedule adjustment reverted successfully!', 'success');
+        fetchAdjustments(adjustmentClassId);
+      } else {
+        showToast(data.detail || data.error || 'Failed to delete adjustment.', 'error');
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Server error deleting adjustment.', 'error');
     }
   };
 
@@ -549,8 +655,8 @@ export const AdminDashboard = () => {
               : 'border-transparent text-white/60 hover:text-white'
           }`}
         >
-          <Palmtree className="w-4 h-4" />
-          Declare Holidays
+          <AlertTriangle className="w-4 h-4" />
+          Schedule Exceptions
         </button>
         <button
           onClick={() => setActiveAdminTab('analytics')}
@@ -1179,14 +1285,15 @@ export const AdminDashboard = () => {
 
         {activeAdminTab === 'holidays' && (
           <>
-            {/* Add Holiday Form Column */}
-            <div className="lg:col-span-4 space-y-6">
+            {/* Left Column: Global Holiday Declarations */}
+            <div className="lg:col-span-6 space-y-6">
+              {/* Add Holiday Form */}
               <div className={`rounded-card p-6 border transition-all duration-300 ${
                 darkMode ? 'bg-[#121212] border border-brand-emerald/20 text-white' : 'bg-white text-zinc-800 shadow-card border border-zinc-100'
               }`}>
                 <h3 className={`text-lg font-bold flex items-center gap-2 mb-4 ${darkMode ? 'text-white' : 'text-zinc-950'}`}>
                   <Palmtree className="w-5 h-5 text-brand-emerald" />
-                  Declare Holiday
+                  Declare Global Holiday
                 </h3>
                 
                 <form onSubmit={handleAddHoliday} className="space-y-4">
@@ -1227,11 +1334,9 @@ export const AdminDashboard = () => {
                   </button>
                 </form>
               </div>
-            </div>
 
-            {/* Holidays List Column */}
-            <div className="lg:col-span-8">
-              <div className={`rounded-card p-6 transition-all duration-300 ${
+              {/* Holidays List */}
+              <div className={`rounded-card p-6 border transition-all duration-300 ${
                 darkMode ? 'bg-[#121212] border border-brand-emerald/20 text-white' : 'bg-white text-zinc-800 border border-zinc-100 shadow-card'
               }`}>
                 <h3 className={`text-lg font-bold flex items-center gap-2 mb-4 border-b pb-4 ${darkMode ? 'text-white border-zinc-800' : 'text-zinc-950 border-zinc-100'}`}>
@@ -1246,7 +1351,7 @@ export const AdminDashboard = () => {
                     No holidays have been declared yet. Active check-in is enabled for all scheduled slots.
                   </div>
                 ) : (
-                  <div className="space-y-3 max-h-[450px] overflow-y-auto pr-1 no-scrollbar">
+                  <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1 no-scrollbar">
                     {holidays.map(h => (
                       <div
                         key={h.id}
@@ -1273,6 +1378,178 @@ export const AdminDashboard = () => {
                             darkMode ? 'text-red-400 hover:bg-red-950/40' : 'text-red-500 hover:bg-red-50'
                           }`}
                           title="Delete Holiday"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Right Column: Temporary Schedule Adjustments */}
+            <div className="lg:col-span-6 space-y-6">
+              {/* Add Adjustment Form */}
+              <div className={`rounded-card p-6 border transition-all duration-300 ${
+                darkMode ? 'bg-[#121212] border border-brand-emerald/20 text-white' : 'bg-white text-zinc-800 shadow-card border border-zinc-100'
+              }`}>
+                <h3 className={`text-lg font-bold flex items-center gap-2 mb-4 ${darkMode ? 'text-white' : 'text-zinc-950'}`}>
+                  <AlertTriangle className="w-5 h-5 text-brand-emerald" />
+                  Temporary Schedule Adjustment
+                </h3>
+
+                <form onSubmit={handleAddAdjustment} className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mb-1.5">Select Class</label>
+                    <select
+                      value={adjustmentClassId}
+                      onChange={(e) => setAdjustmentClassId(e.target.value)}
+                      className={`w-full px-4 py-2.5 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-emerald/10 focus:border-brand-emerald transition-all ${
+                        darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-200 text-zinc-800'
+                      }`}
+                    >
+                      {classes.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.stream} - Div {c.division} ({c.class_code})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mb-1.5">Adjustment Date</label>
+                      <input
+                        type="date"
+                        value={adjustmentDate}
+                        onChange={(e) => setAdjustmentDate(e.target.value)}
+                        className={`w-full px-4 py-2.5 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-emerald/10 focus:border-brand-emerald transition-all ${
+                          darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-200 text-zinc-800'
+                        }`}
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mb-1.5">Adjustment Type</label>
+                      <select
+                        value={adjustmentType}
+                        onChange={(e) => setAdjustmentType(e.target.value)}
+                        className={`w-full px-4 py-2.5 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-emerald/10 focus:border-brand-emerald transition-all ${
+                          darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-200 text-zinc-800'
+                        }`}
+                      >
+                        <option value="cancel">Cancel Class</option>
+                        <option value="swap">Swap / Replace Subject</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mb-1.5">Select Lecture Slot</label>
+                    <select
+                      value={adjustmentSlotId}
+                      onChange={(e) => setAdjustmentSlotId(e.target.value)}
+                      className={`w-full px-4 py-2.5 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-emerald/10 focus:border-brand-emerald transition-all ${
+                        darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-200 text-zinc-800'
+                      }`}
+                    >
+                      {(() => {
+                        const selClass = classes.find(c => c.id === adjustmentClassId);
+                        if (!selClass || !selClass.timetable || selClass.timetable.length === 0) {
+                          return <option value="">No slots scheduled for this class</option>;
+                        }
+                        return selClass.timetable.map(slot => (
+                          <option key={slot.id} value={slot.id}>
+                            {slot.subject_name} ({slot.start_time} - {slot.end_time}) on {slot.day_of_week}
+                          </option>
+                        ));
+                      })()}
+                    </select>
+                  </div>
+
+                  {adjustmentType === 'swap' && (
+                    <div>
+                      <label className="block text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mb-1.5">Replacement Subject Name</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Python / DBMS"
+                        value={adjustmentReplacedSubject}
+                        onChange={(e) => setAdjustmentReplacedSubject(e.target.value)}
+                        className={`w-full px-4 py-2.5 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-emerald/10 focus:border-brand-emerald transition-all ${
+                          darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-200 text-zinc-800'
+                        }`}
+                        required
+                      />
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={addAdjustmentLoading}
+                    className="w-full bg-brand-emerald hover:bg-brand-secondary text-white py-3 rounded-xl font-bold text-sm shadow-md transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    {addAdjustmentLoading ? 'Applying...' : 'Apply Schedule Adjustment'}
+                  </button>
+                </form>
+              </div>
+
+              {/* Adjustments List */}
+              <div className={`rounded-card p-6 border transition-all duration-300 ${
+                darkMode ? 'bg-[#121212] border border-brand-emerald/20 text-white' : 'bg-white text-zinc-800 border border-zinc-100 shadow-card'
+              }`}>
+                <h3 className={`text-lg font-bold flex items-center gap-2 mb-4 border-b pb-4 ${darkMode ? 'text-white border-zinc-800' : 'text-zinc-950 border-zinc-100'}`}>
+                  <Calendar className="w-5 h-5 text-brand-emerald" />
+                  Active Adjustments for Class
+                </h3>
+
+                {adjustmentsLoading ? (
+                  <div className="py-12 text-center text-zinc-400">Loading schedule adjustments...</div>
+                ) : adjustments.length === 0 ? (
+                  <div className="py-12 text-center text-zinc-400">
+                    No active temporary adjustments declared for this class.
+                  </div>
+                ) : (
+                  <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1 no-scrollbar">
+                    {adjustments.map(adj => (
+                      <div
+                        key={adj.id}
+                        className={`flex items-center justify-between p-4.5 rounded-2xl border transition-all ${
+                          darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-200 text-zinc-800'
+                        }`}
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className={`p-2.5 rounded-xl border ${
+                            adj.is_cancelled 
+                              ? (darkMode ? 'bg-red-950/40 border-red-900 text-red-400' : 'bg-red-50 border-red-100 text-red-600')
+                              : (darkMode ? 'bg-amber-950/40 border-amber-900 text-amber-400' : 'bg-amber-50 border-amber-100 text-amber-600')
+                          }`}>
+                            <AlertTriangle className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <div className="font-extrabold text-sm">
+                              {adj.is_cancelled 
+                                ? `Cancelled: ${adj.slot?.subject_name || 'Lecture'}`
+                                : `Swapped: ${adj.slot?.subject_name || 'Lecture'} ➔ ${adj.replaced_subject}`}
+                            </div>
+                            <div className={`text-xs mt-1 font-semibold ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                              Date: {new Date(adj.date).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                            </div>
+                            {adj.slot && (
+                              <div className="text-[10px] text-zinc-400 font-semibold mt-0.5">
+                                Scheduled slot: {adj.slot.start_time} - {adj.slot.end_time}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleDeleteAdjustment(adj.id)}
+                          className={`p-2.5 rounded-xl transition-all ${
+                            darkMode ? 'text-red-400 hover:bg-red-950/40' : 'text-red-500 hover:bg-red-50'
+                          }`}
+                          title="Revert Adjustment"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>

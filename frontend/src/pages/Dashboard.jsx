@@ -9,7 +9,7 @@ import { Profile } from './Profile';
 import { 
   GraduationCap, MapPin, Calendar, Trophy, User, 
   ChevronRight, ChevronLeft, Award, AlertCircle, CheckCircle, 
-  MapPinOff, Clock, LayoutGrid, ClipboardList, Check, Sun, Moon, Palmtree 
+  MapPinOff, Clock, LayoutGrid, ClipboardList, Check, Sun, Moon, Palmtree, AlertTriangle
 } from 'lucide-react';
 
 const getDeviceFingerprint = () => {
@@ -44,6 +44,7 @@ export const Dashboard = () => {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [scheduleSubTab, setScheduleSubTab] = useState('calendar'); // 'calendar' | 'timetable'
   const [holidays, setHolidays] = useState([]);
+  const [adjustments, setAdjustments] = useState([]);
 
   const todayStr = new Date().toISOString().split('T')[0];
   const todayHoliday = holidays.find(h => h.date === todayStr);
@@ -57,6 +58,19 @@ export const Dashboard = () => {
       }
     } catch (err) {
       console.error("Error fetching holidays:", err);
+    }
+  };
+
+  const fetchAdjustments = async () => {
+    if (!user || !user.class_id) return;
+    try {
+      const res = await fetch(`${API_BASE}/attendance/adjustments?class_id=${user.class_id}`, { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        setAdjustments(data);
+      }
+    } catch (err) {
+      console.error("Error fetching adjustments:", err);
     }
   };
 
@@ -102,6 +116,7 @@ export const Dashboard = () => {
       fetchHolidays();
       if (user.class_id) {
         fetchDashboard();
+        fetchAdjustments();
       }
     }
   }, [user]);
@@ -274,6 +289,11 @@ export const Dashboard = () => {
     const todayName = getCurrentDayName();
     if (slot.day_of_week !== todayName) {
       return { label: 'PENDING', class: 'bg-amber-100 text-amber-800 border-amber-200' };
+    }
+
+    const adjustment = adjustments.find(a => a.slot_id === slot.id && a.date === todayStr);
+    if (adjustment && adjustment.is_cancelled) {
+      return { label: 'CANCELLED', class: darkMode ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-red-50 text-red-600 border-red-100' };
     }
 
     if (hasCheckedInToday(slot.id)) {
@@ -539,6 +559,8 @@ export const Dashboard = () => {
                     const status = getSlotStatus(slot);
                     const hasCheckedIn = hasCheckedInToday(slot.id);
                     const windowState = getCheckinWindowState(slot);
+                    const adjustment = adjustments.find(a => a.slot_id === slot.id && a.date === todayStr);
+                    const isCancelled = adjustment && adjustment.is_cancelled;
 
                     // Determine button state
                     let btnDisabled = false;
@@ -556,6 +578,10 @@ export const Dashboard = () => {
                       btnDisabled = true;
                       btnText = `Holiday (${todayHoliday.name})`;
                       btnClass = darkMode ? 'bg-zinc-900 text-zinc-600 border border-zinc-800/40 cursor-not-allowed shadow-none' : 'bg-zinc-100 text-zinc-400 cursor-not-allowed shadow-none';
+                    } else if (isCancelled) {
+                      btnDisabled = true;
+                      btnText = 'Class Cancelled';
+                      btnClass = darkMode ? 'bg-red-950/40 text-red-500 border border-red-900/40 cursor-not-allowed shadow-none' : 'bg-red-50 text-red-500 cursor-not-allowed border border-red-100 shadow-none';
                     } else if (!windowState.isOpen) {
                       btnDisabled = true;
                       btnText = windowState.message;
@@ -564,15 +590,27 @@ export const Dashboard = () => {
 
                     return (
                       <div key={slot.id} className={`rounded-card p-5 flex flex-col justify-between transition-all duration-300 ${
-                        darkMode ? 'bg-[#121212] border border-brand-emerald/20 text-white' : 'bg-white text-zinc-800 shadow-card border border-zinc-100'
+                        isCancelled 
+                          ? (darkMode ? 'bg-[#121212] border border-red-500/20 opacity-60 text-white' : 'bg-red-50/30 text-zinc-500 border border-red-100 shadow-none')
+                          : (darkMode ? 'bg-[#121212] border border-brand-emerald/20 text-white' : 'bg-white text-zinc-800 shadow-card border border-zinc-100')
                       }`}>
                         <div className="flex items-start justify-between mb-3">
                           <div>
-                            <h4 className={`text-lg font-black tracking-tight ${darkMode ? 'text-white' : 'text-zinc-900'}`}>{slot.subject_name}</h4>
+                            <h4 className={`text-lg font-black tracking-tight ${darkMode ? 'text-white' : 'text-zinc-900'}`}>
+                              {adjustment && adjustment.replaced_subject 
+                                ? `${adjustment.replaced_subject} (Replaced ${slot.subject_name})` 
+                                : slot.subject_name}
+                            </h4>
                             <div className={`text-xs font-semibold mt-1 flex items-center gap-1.5 ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>
                               <Clock className={`w-3.5 h-3.5 ${darkMode ? 'text-zinc-500' : 'text-zinc-400'}`} />
                               {slot.start_time} - {slot.end_time}
                             </div>
+                            {adjustment && adjustment.replaced_subject && (
+                              <div className="flex items-center gap-1.5 mt-1.5 text-xs text-amber-500 font-bold">
+                                <AlertTriangle className="w-3.5 h-3.5" />
+                                Subject Swapped
+                              </div>
+                            )}
                           </div>
                           <span className={`text-[10px] font-extrabold border px-2.5 py-1 rounded-full ${status.class}`}>
                             {hasCheckedIn ? 'COMPLETED' : status.label}

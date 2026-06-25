@@ -4,7 +4,7 @@ from datetime import datetime, date as date_type, timedelta, timezone, time as t
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import Class, TimetableSlot, AttendanceLog, User, Role, AttendanceStatus, Holiday
+from app.models import Class, TimetableSlot, AttendanceLog, User, Role, AttendanceStatus, Holiday, ScheduleAdjustment
 from app.schemas import CheckinRequest
 from app.auth_utils import get_current_user
 
@@ -70,6 +70,66 @@ def count_conducted_lectures(db: Session, start_date: date_type, end_date: date_
             holiday_deductions += 1
             
     return max(0, raw_count - holiday_deductions)
+
+def get_student_attendance_summary(db: Session, student_id: str, class_id: str, student_slots: list, today: date_type) -> dict:
+    # Fetch all holidays
+    holidays = db.query(Holiday).all()
+    holiday_dates = {h.date for h in holidays}
+
+    # Fetch all adjustments for this class
+    adjustments = db.query(ScheduleAdjustment).filter(ScheduleAdjustment.class_id == class_id).all()
+    adj_map = {(a.slot_id, a.date): a for a in adjustments}
+
+    # Fetch all PRESENT attendance logs for this student
+    logs = db.query(AttendanceLog).filter(
+        AttendanceLog.student_id == student_id,
+        AttendanceLog.status == AttendanceStatus.PRESENT
+    ).all()
+    logs_map = {(l.slot_id, l.date) for l in logs}
+
+    # Initialize results mapping: subject_name -> {"conducted": 0, "attended": 0}
+    subject_stats = {}
+
+    # Pre-populate all subjects from student's slots so they show up even with 0 conducted
+    for slot in student_slots:
+        if slot.subject_name not in subject_stats:
+            subject_stats[slot.subject_name] = {"conducted": 0, "attended": 0}
+
+    # Loop from TERM_START_DATE to today
+    curr = TERM_START_DATE
+    while curr <= today:
+        if curr in holiday_dates:
+            curr += timedelta(days=1)
+            continue
+            
+        day_name = curr.strftime("%A")
+        day_slots = [s for s in student_slots if s.day_of_week == day_name]
+        
+        for slot in day_slots:
+            adj = adj_map.get((slot.id, curr))
+            is_present = (slot.id, curr) in logs_map
+            
+            if adj:
+                if adj.is_cancelled:
+                    pass
+                elif adj.replaced_subject:
+                    repl_sub = adj.replaced_subject
+                    if repl_sub not in subject_stats:
+                        subject_stats[repl_sub] = {"conducted": 0, "attended": 0}
+                    subject_stats[repl_sub]["conducted"] += 1
+                    if is_present:
+                        subject_stats[repl_sub]["attended"] += 1
+            else:
+                sub = slot.subject_name
+                if sub not in subject_stats:
+                    subject_stats[sub] = {"conducted": 0, "attended": 0}
+                subject_stats[sub]["conducted"] += 1
+                if is_present:
+                    subject_stats[sub]["attended"] += 1
+                    
+        curr += timedelta(days=1)
+        
+    return subject_stats
 
 @router.post("/checkin", status_code=status.HTTP_201_CREATED)
 def checkin(payload: CheckinRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -181,6 +241,18 @@ def checkin(payload: CheckinRequest, db: Session = Depends(get_db), current_user
             detail=f"Check-in disabled. Today is a declared holiday: {holiday.name}."
         )
 
+    # Check if this slot has a schedule adjustment on this date
+    adjustment = db.query(ScheduleAdjustment).filter(
+        ScheduleAdjustment.slot_id == slot.id,
+        ScheduleAdjustment.date == checkin_date
+    ).first()
+
+    if adjustment and adjustment.is_cancelled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Check-in disabled. The lecture for '{slot.subject_name}' on this date has been cancelled."
+        )
+
     # Check if already checked in (to return 409 Conflict)
     log = db.query(AttendanceLog).filter(
         AttendanceLog.student_id == current_user.id,
@@ -223,6 +295,8 @@ def checkin(payload: CheckinRequest, db: Session = Depends(get_db), current_user
         db.commit()
         
         # Return response matching Express backend status code 201 for new checkins
+        if adjustment and adjustment.replaced_subject:
+            return {"message": f"Check-in successful. Class replaced with '{adjustment.replaced_subject}' today.", "status": "PRESENT"}
         return {"message": "Check-in successful.", "status": "PRESENT"}
     except Exception as e:
         db.rollback()
@@ -277,30 +351,9 @@ def get_dashboard(db: Session = Depends(get_db), current_user: User = Depends(ge
     today = date_type.today()
     
     # Group slot data by subject name to compute counts
-    subject_stats = {}
-    total_conducted = 0
-    total_attended = 0
-
-    for slot in student_slots:
-        conducted = count_conducted_lectures(db, TERM_START_DATE, today, slot.day_of_week)
-        attended = db.query(AttendanceLog).filter(
-            AttendanceLog.student_id == current_user.id,
-            AttendanceLog.slot_id == slot.id,
-            AttendanceLog.status == AttendanceStatus.PRESENT
-        ).count()
-
-        # In case dates out of bounds:
-        if conducted < attended:
-            conducted = attended
-
-        subj_name = slot.subject_name
-        if subj_name not in subject_stats:
-            subject_stats[subj_name] = {"conducted": 0, "attended": 0}
-            
-        subject_stats[subj_name]["conducted"] += conducted
-        subject_stats[subj_name]["attended"] += attended
-        total_conducted += conducted
-        total_attended += attended
+    subject_stats = get_student_attendance_summary(db, current_user.id, current_user.class_id, student_slots, today)
+    total_conducted = sum(stats["conducted"] for stats in subject_stats.values())
+    total_attended = sum(stats["attended"] for stats in subject_stats.values())
 
     # Format subject-wise statistics list
     subjects_list = []
@@ -324,25 +377,12 @@ def get_dashboard(db: Session = Depends(get_db), current_user: User = Depends(ge
     # Calculate details for each student on their respective batch-specific timetable slots
     leaderboard_list = []
     for student in students:
-        # Filter slots relevant to this student's batch
         student_slots = [s for s in slots if is_slot_for_student_batch(s.subject_name, student.batch)]
+        summary = get_student_attendance_summary(db, student.id, current_user.class_id, student_slots, today)
         
-        # Calculate conducted slots count for this student
-        student_conducted = 0
-        for slot in student_slots:
-            student_conducted += count_conducted_lectures(db, TERM_START_DATE, today, slot.day_of_week)
-            
-        # Find attendance logs marked PRESENT for this student for their batch slots
-        student_slots_ids = {s.id for s in student_slots}
-        student_attended = db.query(AttendanceLog).filter(
-            AttendanceLog.student_id == student.id,
-            AttendanceLog.slot_id.in_(student_slots_ids) if student_slots_ids else False,
-            AttendanceLog.status == AttendanceStatus.PRESENT
-        ).count()
+        student_conducted = sum(x["conducted"] for x in summary.values())
+        student_attended = sum(x["attended"] for x in summary.values())
         
-        if student_conducted < student_attended:
-            student_conducted = student_attended
-            
         pct = round((student_attended / student_conducted * 100), 1) if student_conducted > 0 else 0.0
         leaderboard_list.append({
             "studentId": student.id,
@@ -436,3 +476,21 @@ def get_holidays_public(db: Session = Depends(get_db)):
     except Exception as e:
         print("Get public holidays error:", e)
         raise HTTPException(status_code=500, detail="Failed to retrieve holidays.")
+
+@router.get("/adjustments")
+def get_adjustments_public(class_id: str, db: Session = Depends(get_db)):
+    try:
+        adjustments = db.query(ScheduleAdjustment).filter(ScheduleAdjustment.class_id == class_id).all()
+        return [
+            {
+                "id": a.id,
+                "class_id": a.class_id,
+                "slot_id": a.slot_id,
+                "date": a.date.isoformat(),
+                "is_cancelled": a.is_cancelled,
+                "replaced_subject": a.replaced_subject
+            } for a in adjustments
+        ]
+    except Exception as e:
+        print("Get public adjustments error:", e)
+        raise HTTPException(status_code=500, detail="Failed to retrieve schedule adjustments.")
