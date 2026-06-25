@@ -476,3 +476,92 @@ def delete_holiday(holiday_id: str, db: Session = Depends(get_db)):
         db.rollback()
         print("Delete holiday error:", e)
         raise HTTPException(status_code=500, detail="Failed to delete holiday.")
+
+@router.get("/classes/{class_id}/analytics")
+def get_class_analytics(class_id: str, db: Session = Depends(get_db)):
+    cls = db.query(Class).filter(Class.id == class_id).first()
+    if not cls:
+        raise HTTPException(status_code=404, detail="Class not found.")
+
+    students = db.query(User).filter(
+        User.class_id == class_id,
+        User.role == Role.STUDENT
+    ).all()
+
+    slots = db.query(TimetableSlot).filter(TimetableSlot.class_id == class_id).all()
+    today = date_type.today()
+
+    student_stats = []
+    total_class_conducted = 0
+    total_class_attended = 0
+    
+    subject_aggregate = {} # subject_name -> {"conducted": 0, "attended": 0}
+
+    for student in students:
+        student_slots = [s for s in slots if is_slot_for_student_batch(s.subject_name, student.batch)]
+        
+        student_conducted = 0
+        student_attended = 0
+        
+        for slot in student_slots:
+            conducted = count_conducted_lectures(db, TERM_START_DATE, today, slot.day_of_week)
+            attended = db.query(AttendanceLog).filter(
+                AttendanceLog.student_id == student.id,
+                AttendanceLog.slot_id == slot.id,
+                AttendanceLog.status == AttendanceStatus.PRESENT
+            ).count()
+
+            if conducted < attended:
+                conducted = attended
+
+            student_conducted += conducted
+            student_attended += attended
+            
+            # Subject aggregated stats
+            subj_name = slot.subject_name
+            if subj_name not in subject_aggregate:
+                subject_aggregate[subj_name] = {"conducted": 0, "attended": 0}
+            subject_aggregate[subj_name]["conducted"] += conducted
+            subject_aggregate[subj_name]["attended"] += attended
+            
+        pct = round((student_attended / student_conducted * 100), 1) if student_conducted > 0 else 0.0
+        
+        student_stats.append({
+            "id": student.id,
+            "name": student.name,
+            "email": student.email,
+            "batch": student.batch,
+            "conducted": student_conducted,
+            "attended": student_attended,
+            "pct": pct
+        })
+        
+        total_class_conducted += student_conducted
+        total_class_attended += student_attended
+
+    class_avg = round((total_class_attended / total_class_conducted * 100), 1) if total_class_conducted > 0 else 0.0
+
+    # Format subject stats
+    subjects_stats = []
+    for name, stats in subject_aggregate.items():
+        sub_pct = round((stats["attended"] / stats["conducted"] * 100), 1) if stats["conducted"] > 0 else 0.0
+        subjects_stats.append({
+            "name": name,
+            "pct": sub_pct,
+            "conducted": stats["conducted"],
+            "attended": stats["attended"]
+        })
+
+    # Sort students by percentage descending
+    student_stats.sort(key=lambda x: x["pct"], reverse=True)
+    
+    # At-risk students are those below 75%
+    at_risk = [s for s in student_stats if s["pct"] < 75.0]
+
+    return {
+        "class_avg": class_avg,
+        "total_students": len(students),
+        "student_stats": student_stats,
+        "subjects_stats": subjects_stats,
+        "at_risk": at_risk
+    }

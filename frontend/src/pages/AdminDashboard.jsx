@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { GraduationCap, Copy, Check, Plus, Trash2, Calendar, ClipboardList, Users, LogOut, Sun, Moon, Edit2, X, UserMinus, UserCheck, UserX, Palmtree } from 'lucide-react';
+import { GraduationCap, Copy, Check, Plus, Trash2, Calendar, ClipboardList, Users, LogOut, Sun, Moon, Edit2, X, UserMinus, UserCheck, UserX, Palmtree, BarChart3, AlertTriangle } from 'lucide-react';
 import Toast from '../components/Toast';
 
 export const AdminDashboard = () => {
@@ -28,7 +28,7 @@ export const AdminDashboard = () => {
   const [timetableLoading, setTimetableLoading] = useState(false);
 
   // Primary Navigation Tab State
-  const [activeAdminTab, setActiveAdminTab] = useState('setup'); // 'setup' | 'overrides' | 'holidays'
+  const [activeAdminTab, setActiveAdminTab] = useState('setup'); // 'setup' | 'overrides' | 'holidays' | 'analytics'
 
   // Manual Overrides State
   const [overrideClassId, setOverrideClassId] = useState('');
@@ -43,6 +43,11 @@ export const AdminDashboard = () => {
   const [holidayName, setHolidayName] = useState('');
   const [holidaysLoading, setHolidaysLoading] = useState(false);
   const [addHolidayLoading, setAddHolidayLoading] = useState(false);
+
+  // Roster Analytics State
+  const [analyticsClassId, setAnalyticsClassId] = useState('');
+  const [analyticsData, setAnalyticsData] = useState(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
 
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -69,6 +74,31 @@ export const AdminDashboard = () => {
     }
   }, [overrideClassId, overrideDate, overrideSlotId]);
 
+  useEffect(() => {
+    if (activeAdminTab === 'analytics' && analyticsClassId) {
+      fetchAnalyticsData(analyticsClassId);
+    }
+  }, [activeAdminTab, analyticsClassId]);
+
+  const fetchAnalyticsData = async (classId) => {
+    if (!classId) return;
+    setAnalyticsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/admin/classes/${classId}/analytics`, { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        setAnalyticsData(data);
+      } else {
+        showToast('Failed to load class analytics.', 'error');
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Error loading analytics.', 'error');
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  };
+
   const showToast = (message, type = 'info') => {
     setToast({ message, type });
   };
@@ -86,6 +116,7 @@ export const AdminDashboard = () => {
             setSlots(data[0].timetable || []);
           }
           setOverrideClassId(prev => prev || data[0].id);
+          setAnalyticsClassId(prev => prev || data[0].id);
         } else if (selectedClass) {
           // Update selected class with fresh data
           const updated = data.find(c => c.id === selectedClass.id);
@@ -520,6 +551,17 @@ export const AdminDashboard = () => {
         >
           <Palmtree className="w-4 h-4" />
           Declare Holidays
+        </button>
+        <button
+          onClick={() => setActiveAdminTab('analytics')}
+          className={`flex items-center gap-2 pb-3 text-sm font-extrabold transition-all border-b-2 ${
+            activeAdminTab === 'analytics'
+              ? 'border-brand-emerald text-brand-emerald'
+              : 'border-transparent text-white/60 hover:text-white'
+          }`}
+        >
+          <BarChart3 className="w-4 h-4" />
+          Roster Analytics
         </button>
       </div>
 
@@ -1239,6 +1281,227 @@ export const AdminDashboard = () => {
                   </div>
                 )}
               </div>
+            </div>
+          </>
+        )}
+
+        {activeAdminTab === 'analytics' && (
+          <>
+            {/* Class Selector Dropdown */}
+            <div className="lg:col-span-4 space-y-6">
+              <div className={`rounded-card p-6 border transition-all duration-300 ${
+                darkMode ? 'bg-[#121212] border border-brand-emerald/20 text-white' : 'bg-white text-zinc-800 shadow-card border border-zinc-100'
+              }`}>
+                <h3 className={`text-lg font-bold flex items-center gap-2 mb-4 ${darkMode ? 'text-white' : 'text-zinc-950'}`}>
+                  <BarChart3 className="w-5 h-5 text-brand-emerald" />
+                  Select Stream
+                </h3>
+                <div>
+                  <label className="block text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mb-1.5">Stream Division</label>
+                  {classes.length === 0 ? (
+                    <div className="text-sm text-zinc-400">No classes configured.</div>
+                  ) : (
+                    <select
+                      value={analyticsClassId}
+                      onChange={(e) => setAnalyticsClassId(e.target.value)}
+                      className={`w-full px-4 py-2.5 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-emerald/10 focus:border-brand-emerald transition-all ${
+                        darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-200 text-zinc-800'
+                      }`}
+                    >
+                      {classes.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.stream} - Div {c.division} ({c.class_code})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Roster Analytics Content */}
+            <div className="lg:col-span-8 space-y-6">
+              {analyticsLoading ? (
+                <div className={`rounded-card p-12 text-center border ${
+                  darkMode ? 'bg-[#121212] border-brand-emerald/20 text-zinc-400' : 'bg-white text-zinc-500 border-zinc-100 shadow-card'
+                }`}>
+                  <div className="animate-pulse font-extrabold text-sm">Aggregating attendance calculations from Neon database...</div>
+                </div>
+              ) : !analyticsData ? (
+                <div className={`rounded-card p-12 text-center border ${
+                  darkMode ? 'bg-[#121212] border-brand-emerald/20 text-zinc-400' : 'bg-white text-zinc-500 border-zinc-100 shadow-card'
+                }`}>
+                  Select a class to view analytics.
+                </div>
+              ) : (
+                <>
+                  {/* Summary Metric Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className={`rounded-card p-5 border transition-all ${
+                      darkMode ? 'bg-[#121212] border-brand-emerald/20 text-white' : 'bg-white border-zinc-100 shadow-card text-zinc-800'
+                    }`}>
+                      <div className="text-[10px] text-zinc-400 font-extrabold uppercase tracking-wider">Class Average</div>
+                      <div className="flex items-baseline gap-2 mt-1">
+                        <span className="text-3xl font-black text-brand-emerald">{analyticsData.class_avg}%</span>
+                      </div>
+                      <div className="w-full bg-zinc-200 dark:bg-zinc-800 h-1.5 rounded-full mt-3 overflow-hidden">
+                        <div 
+                          className="bg-brand-emerald h-full rounded-full transition-all duration-500" 
+                          style={{ width: `${analyticsData.class_avg}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className={`rounded-card p-5 border transition-all ${
+                      darkMode ? 'bg-[#121212] border-brand-emerald/20 text-white' : 'bg-white border-zinc-100 shadow-card text-zinc-800'
+                    }`}>
+                      <div className="text-[10px] text-zinc-400 font-extrabold uppercase tracking-wider">Total Enrolled</div>
+                      <div className="text-3xl font-black text-brand-emerald mt-1">{analyticsData.total_students}</div>
+                      <div className="text-xs text-zinc-400 font-semibold mt-2.5">Registered student profiles</div>
+                    </div>
+
+                    <div className={`rounded-card p-5 border transition-all ${
+                      analyticsData.at_risk.length > 0
+                        ? darkMode ? 'bg-red-950/20 border-red-500/20 text-white' : 'bg-red-50 border-red-100 text-zinc-800'
+                        : darkMode ? 'bg-[#121212] border-brand-emerald/20 text-white' : 'bg-white border-zinc-100 shadow-card text-zinc-800'
+                    }`}>
+                      <div className="text-[10px] text-zinc-400 font-extrabold uppercase tracking-wider">At Risk (&lt;75%)</div>
+                      <div className={`text-3xl font-black mt-1 ${analyticsData.at_risk.length > 0 ? 'text-red-500' : 'text-brand-emerald'}`}>
+                        {analyticsData.at_risk.length}
+                      </div>
+                      <div className="text-xs text-zinc-400 font-semibold mt-2.5">Students below attendance bar</div>
+                    </div>
+                  </div>
+
+                  {/* Low Attendance Alerts / At-Risk */}
+                  <div className={`rounded-card p-6 border transition-all ${
+                    darkMode ? 'bg-[#121212] border-brand-emerald/20 text-white' : 'bg-white border-zinc-100 shadow-card text-zinc-800'
+                  }`}>
+                    <h3 className="text-base font-extrabold flex items-center gap-2 mb-4">
+                      <AlertTriangle className="w-5 h-5 text-red-500" />
+                      Attendance Alerts (Below 75%)
+                    </h3>
+                    
+                    {analyticsData.at_risk.length === 0 ? (
+                      <div className={`p-4 rounded-xl border flex items-center gap-3 ${
+                        darkMode ? 'bg-brand-emerald/10 border-brand-emerald/20 text-brand-emerald' : 'bg-emerald-50 border-emerald-100 text-emerald-800'
+                      }`}>
+                        <Check className="w-5 h-5 flex-shrink-0" />
+                        <span className="text-xs font-bold">Class health is optimal! Every student attendance average is currently above the 75% bar.</span>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[220px] overflow-y-auto pr-1 no-scrollbar">
+                        {analyticsData.at_risk.map(s => (
+                          <div 
+                            key={s.id} 
+                            className={`p-3.5 rounded-2xl border flex items-center justify-between transition-all ${
+                              darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-200 text-zinc-800'
+                            }`}
+                          >
+                            <div>
+                              <div className="font-extrabold text-sm">{s.name}</div>
+                              <div className={`text-[10px] font-semibold mt-0.5 ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                                Batch: {s.batch || 'N/A'} | {s.email}
+                              </div>
+                            </div>
+                            <span className="text-xs font-black text-red-500 bg-red-500/10 border border-red-500/20 px-2.5 py-1 rounded-full uppercase tracking-wider">
+                              {s.pct}%
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Subject Breakdown */}
+                  <div className={`rounded-card p-6 border transition-all ${
+                    darkMode ? 'bg-[#121212] border-brand-emerald/20 text-white' : 'bg-white border-zinc-100 shadow-card text-zinc-800'
+                  }`}>
+                    <h3 className="text-base font-extrabold flex items-center gap-2 mb-4">
+                      <ClipboardList className="w-5 h-5 text-brand-emerald" />
+                      Subject Average Attendance
+                    </h3>
+                    
+                    {analyticsData.subjects_stats.length === 0 ? (
+                      <div className="text-sm text-zinc-400 py-4 text-center">No timetable slots or conducted lecture logs found.</div>
+                    ) : (
+                      <div className="space-y-4">
+                        {analyticsData.subjects_stats.map((subj, index) => {
+                          const isGreen = subj.pct >= 75.0;
+                          const isRed = subj.pct < 60.0;
+                          const colorClass = isGreen ? 'bg-brand-emerald' : isRed ? 'bg-red-500' : 'bg-amber-500';
+                          const textColorClass = isGreen ? 'text-brand-emerald' : isRed ? 'text-red-500' : 'text-amber-500';
+                          return (
+                            <div key={index} className="space-y-1.5">
+                              <div className="flex items-center justify-between text-xs font-bold">
+                                <span>{subj.name}</span>
+                                <span className={textColorClass}>{subj.pct}% <span className="text-zinc-400">({subj.attended}/{subj.conducted})</span></span>
+                              </div>
+                              <div className="w-full bg-zinc-200 dark:bg-zinc-800 h-2.5 rounded-full overflow-hidden">
+                                <div 
+                                  className={`h-full rounded-full transition-all duration-500 ${colorClass}`}
+                                  style={{ width: `${subj.pct}%` }}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Comprehensive Standings Table */}
+                  <div className={`rounded-card p-6 border transition-all ${
+                    darkMode ? 'bg-[#121212] border-brand-emerald/20 text-white' : 'bg-white border-zinc-100 shadow-card text-zinc-800'
+                  }`}>
+                    <h3 className="text-base font-extrabold flex items-center gap-2 mb-4">
+                      <Users className="w-5 h-5 text-brand-emerald" />
+                      Complete Student Standings
+                    </h3>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-sm border-collapse">
+                        <thead>
+                          <tr className={`border-b ${darkMode ? 'border-zinc-800 text-zinc-400' : 'border-zinc-100 text-zinc-500'} font-bold`}>
+                            <th className="pb-3">Name</th>
+                            <th className="pb-3 hidden sm:table-cell">Email</th>
+                            <th className="pb-3">Batch</th>
+                            <th className="pb-3">Attended</th>
+                            <th className="pb-3 text-right">Percentage</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {analyticsData.student_stats.map(s => {
+                            const isHigh = s.pct >= 75.0;
+                            const badgeColor = isHigh 
+                              ? 'bg-emerald-500/10 text-brand-emerald border-brand-emerald/20' 
+                              : 'bg-red-500/10 text-red-500 border-red-500/20';
+                            return (
+                              <tr key={s.id} className={`border-b ${darkMode ? 'border-zinc-800/50 hover:bg-zinc-900/30' : 'border-zinc-100/80 hover:bg-zinc-50/50'} transition-all`}>
+                                <td className="py-3.5 font-bold">{s.name}</td>
+                                <td className={`py-3.5 hidden sm:table-cell ${darkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>{s.email}</td>
+                                <td className="py-3.5 font-bold">
+                                  {s.batch ? (
+                                    <span className={`text-[10px] px-2 py-0.5 border rounded-md ${
+                                      darkMode ? 'bg-zinc-800 border-zinc-700 text-zinc-300' : 'bg-zinc-100 border-zinc-200 text-zinc-600'
+                                    }`}>{s.batch}</span>
+                                  ) : 'N/A'}
+                                </td>
+                                <td className="py-3.5 font-semibold text-zinc-400">{s.attended} / {s.conducted}</td>
+                                <td className="py-3.5 text-right font-black">
+                                  <span className={`text-xs px-2.5 py-1 rounded-full font-bold border ${badgeColor} uppercase tracking-wide`}>
+                                    {s.pct}%
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </>
         )}

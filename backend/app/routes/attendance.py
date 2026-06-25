@@ -1,6 +1,6 @@
 import os
 import math
-from datetime import datetime, date as date_type, timedelta
+from datetime import datetime, date as date_type, timedelta, timezone, time as time_cls
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -112,7 +112,12 @@ def checkin(payload: CheckinRequest, db: Session = Depends(get_db), current_user
                 detail=f"Check-in failed: You must be physically present on campus. Current distance: {round(distance)}m"
             )
 
-    checkin_date = date_type.today()
+    # Time window checking (only open during the last 15 minutes of the slot)
+    # Get current time in Indian Standard Time (IST, UTC+5:30)
+    ist_tz = timezone(timedelta(hours=5, minutes=30))
+    now_ist = datetime.now(timezone.utc).astimezone(ist_tz)
+    
+    checkin_date = now_ist.date()
     if payload.date:
         try:
             checkin_date = datetime.strptime(payload.date, "%Y-%m-%d").date()
@@ -120,6 +125,52 @@ def checkin(payload: CheckinRequest, db: Session = Depends(get_db), current_user
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid date format. Must be YYYY-MM-DD."
+            )
+
+    # We enforce weekday and time window constraint unless bypassed for development testing
+    disable_time_window = os.getenv("DISABLE_GEOFENCE") == "true"
+    
+    if not disable_time_window:
+        # 1. Enforce that the check-in is for today
+        if checkin_date != now_ist.date():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Check-in failed: You can only check in for today's lectures."
+            )
+            
+        # 2. Enforce day of week matches slot
+        day_name = checkin_date.strftime("%A")
+        if day_name != slot.day_of_week:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Check-in failed: Slot '{slot.subject_name}' is scheduled for {slot.day_of_week}, not {day_name}."
+            )
+            
+        # 3. Enforce last 15 minutes window
+        try:
+            start_h, start_m = map(int, slot.start_time.split(":"))
+            end_h, end_m = map(int, slot.end_time.split(":"))
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Invalid timetable slot start/end time configuration in database."
+            )
+            
+        slot_start_dt = datetime.combine(checkin_date, time_cls(start_h, start_m)).replace(tzinfo=ist_tz)
+        slot_end_dt = datetime.combine(checkin_date, time_cls(end_h, end_m)).replace(tzinfo=ist_tz)
+        
+        window_start = slot_end_dt - timedelta(minutes=15)
+        window_end = slot_end_dt
+        
+        if now_ist < window_start:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Check-in not open yet. Check-in is only available in the last 15 minutes of the class (from {window_start.strftime('%I:%M %p')} to {window_end.strftime('%I:%M %p')} IST)."
+            )
+        elif now_ist > window_end:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Check-in closed. The lecture slot ended at {window_end.strftime('%I:%M %p')} IST."
             )
 
     # Check if this date is a holiday

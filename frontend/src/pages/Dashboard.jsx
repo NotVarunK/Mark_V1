@@ -220,17 +220,64 @@ export const Dashboard = () => {
 
   // Helper: check if student has checked into a slot today
   const hasCheckedInToday = (slotId) => {
-    if (!dashboardData || !dashboardData.subjects) return false;
-    // We can infer check-ins from overall dashboard list logs if saved
-    // Let's rely on backend check-in error mapping, or simulate locally.
-    // For local visual feedback, we can verify slot state
-    return false; // Dynamic state fallback
+    if (!dashboardData || !dashboardData.logs) return false;
+    return dashboardData.logs.some(
+      log => log.slot_id === slotId && isSameDay(new Date(log.date), new Date()) && log.status === 'PRESENT'
+    );
+  };
+
+  const getCheckinWindowState = (slot) => {
+    try {
+      const now = new Date();
+      const currentMins = now.getHours() * 60 + now.getMinutes();
+
+      const [startH, startM] = slot.start_time.split(':').map(Number);
+      const [endH, endM] = slot.end_time.split(':').map(Number);
+      const endMins = endH * 60 + endM;
+
+      // Check-in opens 15 minutes before slot end
+      const windowStartMins = endMins - 15;
+
+      if (currentMins < windowStartMins) {
+        const formatTime = (h, m) => {
+          const ampm = h >= 12 ? 'PM' : 'AM';
+          const displayH = h % 12 || 12;
+          const displayM = String(m).padStart(2, '0');
+          return `${displayH}:${displayM} ${ampm}`;
+        };
+        const openHour = Math.floor(windowStartMins / 60);
+        const openMin = windowStartMins % 60;
+        return { 
+          isOpen: false, 
+          isClosed: false, 
+          message: `Opens at ${formatTime(openHour, openMin)}` 
+        };
+      } else if (currentMins > endMins) {
+        return { 
+          isOpen: false, 
+          isClosed: true, 
+          message: 'Check-in Closed' 
+        };
+      } else {
+        return { 
+          isOpen: true, 
+          isClosed: false, 
+          message: 'Check In' 
+        };
+      }
+    } catch (e) {
+      return { isOpen: true, isClosed: false, message: 'Check In' };
+    }
   };
 
   const getSlotStatus = (slot) => {
     const todayName = getCurrentDayName();
     if (slot.day_of_week !== todayName) {
       return { label: 'PENDING', class: 'bg-amber-100 text-amber-800 border-amber-200' };
+    }
+
+    if (hasCheckedInToday(slot.id)) {
+      return { label: 'COMPLETED', class: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
     }
 
     // Check time bounds
@@ -490,6 +537,31 @@ export const Dashboard = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {todaySlots.map((slot) => {
                     const status = getSlotStatus(slot);
+                    const hasCheckedIn = hasCheckedInToday(slot.id);
+                    const windowState = getCheckinWindowState(slot);
+
+                    // Determine button state
+                    let btnDisabled = false;
+                    let btnText = 'Check In';
+                    let btnClass = 'bg-brand-emerald hover:bg-brand-secondary text-white hover:shadow-lg';
+
+                    if (checkinLoading === slot.id) {
+                      btnDisabled = true;
+                      btnText = 'Checking Coordinates...';
+                    } else if (hasCheckedIn) {
+                      btnDisabled = true;
+                      btnText = 'Checked In';
+                      btnClass = darkMode ? 'bg-zinc-900 text-zinc-600 border border-zinc-800/40 cursor-not-allowed shadow-none' : 'bg-zinc-100 text-zinc-400 cursor-not-allowed shadow-none';
+                    } else if (todayHoliday) {
+                      btnDisabled = true;
+                      btnText = `Holiday (${todayHoliday.name})`;
+                      btnClass = darkMode ? 'bg-zinc-900 text-zinc-600 border border-zinc-800/40 cursor-not-allowed shadow-none' : 'bg-zinc-100 text-zinc-400 cursor-not-allowed shadow-none';
+                    } else if (!windowState.isOpen) {
+                      btnDisabled = true;
+                      btnText = windowState.message;
+                      btnClass = darkMode ? 'bg-zinc-900 text-zinc-600 border border-zinc-800/40 cursor-not-allowed shadow-none' : 'bg-zinc-100 text-zinc-400 cursor-not-allowed shadow-none';
+                    }
+
                     return (
                       <div key={slot.id} className={`rounded-card p-5 flex flex-col justify-between transition-all duration-300 ${
                         darkMode ? 'bg-[#121212] border border-brand-emerald/20 text-white' : 'bg-white text-zinc-800 shadow-card border border-zinc-100'
@@ -503,21 +575,17 @@ export const Dashboard = () => {
                             </div>
                           </div>
                           <span className={`text-[10px] font-extrabold border px-2.5 py-1 rounded-full ${status.class}`}>
-                            {status.label}
+                            {hasCheckedIn ? 'COMPLETED' : status.label}
                           </span>
                         </div>
 
                         <button
                           onClick={() => handleCheckin(slot.id)}
-                          disabled={checkinLoading !== null || status.label === 'COMPLETED' || !!todayHoliday}
-                          className={`w-full py-3 rounded-2xl font-bold text-sm shadow-sm transition-all flex items-center justify-center gap-2 ${
-                            status.label === 'COMPLETED' || !!todayHoliday
-                              ? darkMode ? 'bg-zinc-900 text-zinc-600 border border-zinc-800/40 cursor-not-allowed shadow-none' : 'bg-zinc-100 text-zinc-400 cursor-not-allowed shadow-none'
-                              : 'bg-brand-emerald hover:bg-brand-secondary text-white hover:shadow-lg'
-                          }`}
+                          disabled={btnDisabled}
+                          className={`w-full py-3 rounded-2xl font-bold text-sm shadow-sm transition-all flex items-center justify-center gap-2 ${btnClass}`}
                         >
                           <MapPin className="w-4 h-4" />
-                          {checkinLoading === slot.id ? 'Checking Coordinates...' : status.label === 'COMPLETED' ? 'Checked In' : todayHoliday ? `Holiday (${todayHoliday.name})` : 'Check In'}
+                          {btnText}
                         </button>
                       </div>
                     );
