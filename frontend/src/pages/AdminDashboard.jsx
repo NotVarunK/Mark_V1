@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { GraduationCap, Copy, Check, Plus, Trash2, Calendar, ClipboardList, Users, LogOut, Sun, Moon, Edit2, X, UserMinus, UserCheck, UserX, Palmtree, BarChart3, AlertTriangle } from 'lucide-react';
+import { GraduationCap, Copy, Check, Plus, Trash2, Calendar, ClipboardList, Users, LogOut, Sun, Moon, Edit2, X, UserMinus, UserCheck, UserX, Palmtree, BarChart3, AlertTriangle, Lock } from 'lucide-react';
 import Toast from '../components/Toast';
 
 export const AdminDashboard = () => {
@@ -8,6 +8,13 @@ export const AdminDashboard = () => {
   const [classes, setClasses] = useState([]);
   const [selectedClass, setSelectedClass] = useState(null);
   const [toast, setToast] = useState({ message: '', type: 'info' });
+
+  // Admin Change Password Modal State
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [passwordMessage, setPasswordMessage] = useState('');
+  const [passwordError, setPasswordError] = useState('');
 
   // Class Creator Form State
   const [stream, setStream] = useState('');
@@ -126,6 +133,42 @@ export const AdminDashboard = () => {
 
   const showToast = (message, type = 'info') => {
     setToast({ message, type });
+  };
+
+  const handlePasswordUpdate = async (e) => {
+    e.preventDefault();
+    if (newPassword.trim().length < 6) {
+      showToast('Password must be at least 6 characters long.', 'warning');
+      return;
+    }
+    setPasswordLoading(true);
+    setPasswordError('');
+    setPasswordMessage('');
+    try {
+      const response = await fetch(`${API_BASE}/auth/password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: newPassword }),
+        credentials: 'include'
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setPasswordMessage(data.message || 'Password updated successfully!');
+        setNewPassword('');
+        showToast('Password updated successfully!', 'success');
+        setTimeout(() => {
+          setShowPasswordModal(false);
+          setPasswordMessage('');
+        }, 1500);
+      } else {
+        setPasswordError(data.detail || data.error || 'Failed to update password.');
+      }
+    } catch (err) {
+      console.error(err);
+      setPasswordError('Network error updating password.');
+    } finally {
+      setPasswordLoading(false);
+    }
   };
 
   const fetchClasses = async () => {
@@ -601,6 +644,14 @@ export const AdminDashboard = () => {
           </div>
         </div>
         <div className="flex items-center gap-4">
+          {/* Change Password Button */}
+          <button
+            onClick={() => setShowPasswordModal(true)}
+            className="p-2.5 bg-brand-glass rounded-xl border border-white/10 hover:bg-white/10 transition-colors text-white"
+            title="Change Password"
+          >
+            <Lock className="w-5 h-5 text-brand-emerald" />
+          </button>
           {/* Theme Toggle Button */}
           <button
             onClick={toggleDarkMode}
@@ -1783,6 +1834,68 @@ export const AdminDashboard = () => {
           </>
         )}
       </main>
+
+      {/* Change Password Modal */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className={`w-full max-w-md rounded-card border p-6 transition-all duration-300 ${
+            darkMode ? 'bg-[#121212] border-brand-emerald/20 text-white' : 'bg-white border-zinc-200 text-zinc-800 shadow-xl'
+          }`}>
+            <div className="flex items-center justify-between border-b pb-3 mb-4 border-white/10">
+              <h3 className={`text-base font-bold flex items-center gap-2 ${darkMode ? 'text-white' : 'text-zinc-950'}`}>
+                <Lock className="w-5 h-5 text-brand-emerald" />
+                Change Password
+              </h3>
+              <button 
+                onClick={() => {
+                  setShowPasswordModal(false);
+                  setPasswordError('');
+                  setPasswordMessage('');
+                  setNewPassword('');
+                }}
+                className={`p-1 rounded-lg transition-colors ${darkMode ? 'hover:bg-zinc-800 text-zinc-400' : 'hover:bg-zinc-100 text-zinc-500'}`}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handlePasswordUpdate} className="space-y-4">
+              {passwordError && (
+                <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-500 rounded-xl text-xs font-semibold">
+                  {passwordError}
+                </div>
+              )}
+              {passwordMessage && (
+                <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-brand-emerald rounded-xl text-xs font-semibold">
+                  {passwordMessage}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 mb-1.5">New Password</label>
+                <input
+                  type="password"
+                  placeholder="At least 6 characters"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className={`w-full px-4 py-2.5 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-brand-emerald/10 focus:border-brand-emerald transition-all ${
+                    darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-200 text-zinc-800'
+                  }`}
+                  required
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={passwordLoading}
+                className="w-full bg-brand-emerald hover:bg-brand-secondary text-white py-3 rounded-xl font-bold text-sm shadow-md transition-all disabled:opacity-50"
+              >
+                {passwordLoading ? 'Updating...' : 'Update Password'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
 
       <Toast {...toast} onClose={() => setToast({ message: '', type: 'info' })} />
     </div>

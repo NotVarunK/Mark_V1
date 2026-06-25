@@ -9,8 +9,8 @@ from app.models import User
 JWT_SECRET = os.getenv("JWT_SECRET", "super-secure-jwt-secret-key-987654321")
 
 def create_access_token(payload: dict) -> str:
-    # Expire in 24 hours
-    expire = datetime.utcnow() + timedelta(hours=24)
+    # Expire in 365 days
+    expire = datetime.utcnow() + timedelta(days=365)
     to_encode = payload.copy()
     to_encode.update({"exp": expire.timestamp()})
     encoded_jwt = jwt.encode(to_encode, JWT_SECRET, algorithm="HS256")

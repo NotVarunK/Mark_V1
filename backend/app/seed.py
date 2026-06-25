@@ -10,7 +10,7 @@ def seed_db():
     db = SessionLocal()
     try:
         admin_email = 'admin@college.edu.in'
-        admin_password = os.getenv("ADMIN_PASSWORD", "Admin@123")
+        admin_password = os.getenv("ADMIN_PASSWORD", "adpass@9821")
         
         # Check if user exists
         admin = db.query(User).filter(User.email == admin_email).first()

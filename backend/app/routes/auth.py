@@ -7,7 +7,7 @@ from google.oauth2 import id_token
 from google.auth.transport import requests
 from app.database import get_db
 from app.models import User, Role
-from app.schemas import SignupRequest, LoginRequest, OAuthRequest
+from app.schemas import SignupRequest, LoginRequest, OAuthRequest, UpdatePasswordRequest
 from app.auth_utils import create_access_token, get_current_user
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -139,7 +139,7 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
         key="token",
         value=jwt_token,
         httponly=True,
-        max_age=24 * 60 * 60, # 24 hours
+        max_age=365 * 24 * 60 * 60, # 365 days
         samesite=samesite_val,
         secure=secure_val
     )
@@ -201,7 +201,7 @@ def google_auth(payload: OAuthRequest, response: Response, db: Session = Depends
             key="token",
             value=jwt_token,
             httponly=True,
-            max_age=24 * 60 * 60,
+            max_age=365 * 24 * 60 * 60,
             samesite=samesite_val,
             secure=secure_val
         )
@@ -231,3 +231,24 @@ def get_me(user: User = Depends(get_current_user)):
     return {
         "user": serialize_user(user)
     }
+
+@router.post("/password")
+def update_password(payload: UpdatePasswordRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    try:
+        new_password = payload.password.strip()
+        if len(new_password) < 6:
+            raise HTTPException(status_code=400, detail="Password must be at least 6 characters long.")
+        
+        pwd_bytes = new_password.encode('utf-8')
+        salt = bcrypt.gensalt()
+        password_hash = bcrypt.hashpw(pwd_bytes, salt).decode('utf-8')
+        
+        current_user.password_hash = password_hash
+        db.commit()
+        return {"message": "Password updated successfully."}
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        db.rollback()
+        print("Update password error:", e)
+        raise HTTPException(status_code=500, detail="Failed to update password.")

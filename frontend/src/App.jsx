@@ -124,7 +124,9 @@ function App() {
   return (
     <Router>
       <AuthProvider>
-        <AppRoutes />
+        <div className="min-h-screen w-full max-w-full overflow-x-hidden flex flex-col bg-[#0b0f19]">
+          <AppRoutes />
+        </div>
       </AuthProvider>
     </Router>
   );

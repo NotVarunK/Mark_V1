@@ -57,3 +57,6 @@ class AdjustmentCreateRequest(BaseModel):
     date: str  # YYYY-MM-DD
     is_cancelled: bool = False
     replaced_subject: Optional[str] = None
+
+class UpdatePasswordRequest(BaseModel):
+    password: str
