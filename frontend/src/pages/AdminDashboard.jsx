@@ -681,7 +681,7 @@ export const AdminDashboard = () => {
       </header>
 
       {/* Navigation Tabs */}
-      <div className="flex border-b border-white/10 mb-8 max-w-7xl mx-auto gap-6 px-4 md:px-0 overflow-x-auto no-scrollbar whitespace-nowrap">
+      <div className="flex border-b border-white/10 mb-8 w-full max-w-7xl mx-auto gap-6 px-4 md:px-0 overflow-x-auto no-scrollbar whitespace-nowrap touch-pan-x">
         <button
           onClick={() => setActiveAdminTab('setup')}
           className={`flex items-center gap-2 pb-3 text-sm font-extrabold transition-all border-b-2 ${
