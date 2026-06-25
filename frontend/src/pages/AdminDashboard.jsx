@@ -1743,7 +1743,7 @@ export const AdminDashboard = () => {
         {activeAdminTab === 'analytics' && (
           <>
             {/* Class Selector Dropdown */}
-            <div className={`lg:col-span-4 space-y-6 ${analyticsSubTab !== 'summary' ? 'hidden lg:block' : ''}`}>
+            <div className="lg:col-span-4 space-y-6">
               <div className={`rounded-card p-6 border transition-all duration-300 ${
                 darkMode ? 'bg-[#121212] border border-brand-emerald/20 text-white' : 'bg-white text-zinc-800 shadow-card border border-zinc-100'
               }`}>
