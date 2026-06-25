@@ -11,8 +11,8 @@ from app.auth_utils import get_current_user
 router = APIRouter(prefix="/attendance", tags=["Attendance & Check-in"])
 
 TERM_START_DATE = date_type(2026, 3, 1)
-CAMPUS_LAT = 18.5204
-CAMPUS_LON = 73.8567
+CAMPUS_LAT = 18.5255
+CAMPUS_LON = 73.8368
 MAX_DISTANCE_METERS = 100
 
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
