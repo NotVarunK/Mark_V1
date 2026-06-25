@@ -639,46 +639,68 @@ export const AdminDashboard = () => {
       darkMode ? 'bg-black text-white' : 'bg-brand-teal text-white'
     }`}>
       {/* Top Banner */}
-      <header className="max-w-7xl mx-auto flex items-center justify-between border-b border-white/10 pb-5 mb-8">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-brand-glass rounded-xl text-brand-emerald border border-white/10">
-            <GraduationCap className="w-8 h-8" />
+      <header className="max-w-7xl mx-auto border-b border-white/10 pb-6 mb-8">
+        {/* Row 1: Logo + Title | Actions */}
+        <div className="flex items-center justify-between gap-4">
+          {/* Left: Logo + Title */}
+          <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+            <div className="shrink-0 p-2.5 sm:p-3 bg-brand-glass rounded-xl text-brand-emerald border border-white/10">
+              <GraduationCap className="w-6 h-6 sm:w-9 sm:h-9" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-lg sm:text-2xl md:text-3xl font-extrabold tracking-tight leading-tight truncate">Admin Control Panel</h1>
+              <p className="text-[10px] sm:text-xs text-brand-emerald font-semibold uppercase tracking-widest mt-0.5">Configure Classes & Schedules</p>
+            </div>
+          </div>
+
+          {/* Right: Action buttons */}
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            {/* Change Password */}
+            <button
+              onClick={() => setShowPasswordModal(true)}
+              className="p-2 sm:p-2.5 bg-brand-glass rounded-xl border border-white/10 hover:bg-white/10 transition-colors text-white"
+              title="Change Password"
+            >
+              <Lock className="w-4 h-4 sm:w-5 sm:h-5 text-brand-emerald" />
+            </button>
+            {/* Theme Toggle */}
+            <button
+              onClick={toggleDarkMode}
+              className="p-2 sm:p-2.5 bg-brand-glass rounded-xl border border-white/10 hover:bg-white/10 transition-colors text-white"
+              title="Toggle Theme"
+            >
+              {darkMode ? <Sun className="w-4 h-4 sm:w-5 sm:h-5 text-brand-emerald" /> : <Moon className="w-4 h-4 sm:w-5 sm:h-5" />}
+            </button>
+            {/* Divider — desktop only */}
+            <div className="hidden sm:block w-px h-8 bg-white/10" />
+            {/* User info — desktop only */}
+            <div className="hidden sm:block text-right">
+              <div className="text-sm font-bold">{user?.name}</div>
+              <div className="text-[10px] text-white/50 font-bold uppercase tracking-wider">System Administrator</div>
+            </div>
+            {/* Sign Out */}
+            <button
+              onClick={logout}
+              className="flex items-center gap-1.5 sm:gap-2 bg-brand-glass border border-white/10 hover:bg-white/10 text-red-400 font-bold text-xs px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl transition-all"
+            >
+              <LogOut className="w-4 h-4" />
+              <span className="hidden xs:inline">Sign Out</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Row 2: User info — mobile only */}
+        <div className="mt-3 flex items-center gap-2.5 sm:hidden">
+          <div className="w-8 h-8 rounded-full bg-brand-emerald/20 border border-brand-emerald/40 flex items-center justify-center text-brand-emerald font-bold text-sm shrink-0">
+            {user?.name?.charAt(0)?.toUpperCase()}
           </div>
           <div>
-            <h1 className="text-2xl font-extrabold tracking-tight">Admin Control Panel</h1>
-            <p className="text-xs text-brand-emerald font-semibold uppercase tracking-wider">Configure Classes & Schedules</p>
+            <div className="text-sm font-bold leading-tight">{user?.name}</div>
+            <div className="text-[10px] text-white/50 font-semibold uppercase tracking-wider">System Administrator</div>
           </div>
-        </div>
-        <div className="flex items-center gap-4">
-          {/* Change Password Button */}
-          <button
-            onClick={() => setShowPasswordModal(true)}
-            className="p-2.5 bg-brand-glass rounded-xl border border-white/10 hover:bg-white/10 transition-colors text-white"
-            title="Change Password"
-          >
-            <Lock className="w-5 h-5 text-brand-emerald" />
-          </button>
-          {/* Theme Toggle Button */}
-          <button
-            onClick={toggleDarkMode}
-            className="p-2.5 bg-brand-glass rounded-xl border border-white/10 hover:bg-white/10 transition-colors text-white"
-            title="Toggle Theme"
-          >
-            {darkMode ? <Sun className="w-5 h-5 text-brand-emerald" /> : <Moon className="w-5 h-5" />}
-          </button>
-          <div className="hidden sm:block text-right">
-            <div className="text-sm font-bold">{user?.name}</div>
-            <div className="text-[10px] text-white/50 font-bold uppercase tracking-wider">System Administrator</div>
-          </div>
-          <button
-            onClick={logout}
-            className="flex items-center gap-2 bg-brand-glass border border-white/10 hover:bg-white/10 text-red-400 font-bold text-xs px-4.5 py-2.5 rounded-xl transition-all"
-          >
-            <LogOut className="w-4 h-4" />
-            Sign Out
-          </button>
         </div>
       </header>
+
 
       {/* Navigation Tabs */}
       <div className="flex border-b border-white/10 mb-8 w-full max-w-7xl mx-auto gap-6 px-4 md:px-0 overflow-x-auto no-scrollbar whitespace-nowrap touch-pan-x">
